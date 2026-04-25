@@ -9,8 +9,8 @@ const pool = new Pool({
 });
 
 // 🔥 اختبار الاتصال هنا
-pool.connect()
-  .then(() => console.log("DB Connected ✅"))
+pool.query('SELECT NOW()')
+  .then(res => console.log("DB Connected ✅", res.rows[0]))
   .catch(err => console.error("DB Error ❌", err));
 
 module.exports = pool;
