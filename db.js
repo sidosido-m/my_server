@@ -8,4 +8,9 @@ const pool = new Pool({
   }
 });
 
+// 🔥 اختبار الاتصال هنا
+pool.connect()
+  .then(() => console.log("DB Connected ✅"))
+  .catch(err => console.error("DB Error ❌", err));
+
 module.exports = pool;
