@@ -5,7 +5,6 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false,
   },
-  family: 4 // 🔥 يجبر IPv4
 });
 
 module.exports = pool;
