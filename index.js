@@ -1,266 +1,257 @@
-const express = require('express');
-const cors = require('cors');
-const pool = require('./db');
-const jwt = require('jsonwebtoken');
-const multer = require('multer');
-const fs = require('fs');
-const bcrypt = require('bcrypt');
-require('dotenv').config();
+require("dotenv").config();
+
+const express = require("express");
+const cors = require("cors");
+const pool = require("./db");
+const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const fs = require("fs");
+const bcrypt = require("bcrypt");
+
+const auth = require("./middleware/auth");
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-const JWT_SECRET = process.env.JWT_SECRET || "secret_key";
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET;
 
-// =======================
-// 🟢 TEST ROUTE
-// =======================
-app.get('/', (req, res) => {
-  res.send("API is running 🚀");
-});
-
-// =======================
-// 📂 UPLOAD SYSTEM
-// =======================
-if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
+// ================= UPLOAD =================
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/'),
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname)
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
 });
 
 const upload = multer({ storage });
 
-app.use('/uploads', express.static('uploads'));
+app.use("/uploads", express.static("uploads"));
 
-// =======================
-// 🔐 AUTH MIDDLEWARE
-// =======================
-const auth = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-
-  if (!token) return res.status(401).json({ error: "No token" });
-
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    return res.status(403).json({ error: "Invalid token" });
-  }
-};
-
-// =======================
-// 👤 REGISTER
-// =======================
+// ================= REGISTER =================
 app.post("/register", async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
-    const exist = await pool.query(
+    const check = await pool.query(
       "SELECT * FROM users WHERE email=$1",
       [email]
     );
 
-    if (exist.rows.length > 0) {
-      return res.status(400).json({ error: "Email exists" });
+    if (check.rows.length > 0) {
+      return res.status(400).json({ error: "Email already exists" });
     }
 
     const hash = await bcrypt.hash(password, 10);
 
-    await pool.query(
-      "INSERT INTO users(name,email,password,role,is_verified) VALUES($1,$2,$3,$4,$5)",
-      [name, email, hash, role, true]
-    );
-
-    res.json({ success: true });
-
-  } catch (e) {
-    console.log("REGISTER ERROR ❌", e); // 🔥 مهم
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// =======================
-// 🔐 LOGIN
-// =======================
-app.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const user = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
-      [email]
-    );
-
-    if (user.rows.length === 0)
-      return res.status(400).json({ error: "User not found" });
-
-    const valid = await bcrypt.compare(password, user.rows[0].password);
-
-    if (!valid)
-      return res.status(400).json({ error: "Wrong password" });
-
-    const token = jwt.sign(
-      { id: user.rows[0].id, role: user.rows[0].role },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.json({
-  message: "HELLO FROM SERVER 🚀",
-  token,
-  user: dbUser
-});
-
-  } catch (e) {
-    console.error("LOGIN ERROR:", e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// =======================
-// 📦 PRODUCTS
-// =======================
-app.get('/products', async (req, res) => {
-  try {
-    const data = await pool.query("SELECT * FROM products ORDER BY id DESC");
-    res.json(data.rows);
-  } catch (e) {
-    console.error("PRODUCT ERROR:", e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/products', auth, upload.single('image'), async (req, res) => {
-  try {
-    const { name, price } = req.body;
-    const image = req.file?.filename;
-
-    const result = await pool.query(
-      `INSERT INTO products(name,price,seller_id,image)
-       VALUES($1,$2,$3,$4) RETURNING *`,
-      [name, price, req.user.id, image]
-    );
-
-    res.json(result.rows[0]);
-  } catch (e) {
-    console.error("ADD PRODUCT ERROR:", e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.delete('/products/:id', auth, async (req, res) => {
-  try {
-    await pool.query(
-      "DELETE FROM products WHERE id=$1 AND seller_id=$2",
-      [req.params.id, req.user.id]
-    );
-
-    res.json({ success: true });
-  } catch (e) {
-    console.error("DELETE PRODUCT ERROR:", e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// =======================
-// 🛒 CART
-// =======================
-app.post('/cart', auth, async (req, res) => {
-  try {
-    const { product_id, quantity } = req.body;
+    const otp = Math.floor(100000 + Math.random() * 900000);
+    const expire = new Date(Date.now() + 5 * 60 * 1000);
 
     await pool.query(
-      "INSERT INTO cart(user_id,product_id,quantity) VALUES($1,$2,$3)",
-      [req.user.id, product_id, quantity || 1]
+      `INSERT INTO users(name,email,password,role,otp,otp_expire,is_verified)
+       VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [name, email, hash, role, otp, expire, false]
     );
 
-    res.json({ success: true });
-  } catch (e) {
-    console.error("CART ERROR:", e);
-    res.status(500).json({ error: e.message });
+    res.json({ success: true, otp });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/cart', auth, async (req, res) => {
-  try {
-    const data = await pool.query(
-      `SELECT c.id, c.quantity, p.name, p.price, p.image
-       FROM cart c
-       JOIN products p ON p.id=c.product_id
-       WHERE c.user_id=$1`,
-      [req.user.id]
-    );
+// ================= VERIFY OTP =================
+app.post("/verify-otp", async (req, res) => {
+  const { email, otp } = req.body;
 
-    res.json(data.rows);
-  } catch (e) {
-    console.error("GET CART ERROR:", e);
-    res.status(500).json({ error: e.message });
-  }
+  const user = await pool.query(
+    "SELECT * FROM users WHERE email=$1",
+    [email]
+  );
+
+  if (!user.rows.length)
+    return res.status(400).json({ error: "User not found" });
+
+  const u = user.rows[0];
+
+  if (u.otp != otp)
+    return res.status(400).json({ error: "Wrong OTP" });
+
+  if (new Date() > new Date(u.otp_expire))
+    return res.status(400).json({ error: "OTP expired" });
+
+  await pool.query(
+    "UPDATE users SET is_verified=true, otp=NULL WHERE email=$1",
+    [email]
+  );
+
+  res.json({ success: true });
 });
 
-// =======================
-// 💳 CHECKOUT
-// =======================
-app.post('/checkout', auth, async (req, res) => {
-  try {
-    const cart = await pool.query(
-      `SELECT c.*, p.price FROM cart c
-       JOIN products p ON p.id=c.product_id
-       WHERE c.user_id=$1`,
-      [req.user.id]
-    );
+// ================= LOGIN =================
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
 
-    let total = 0;
-    cart.rows.forEach(i => total += i.price * i.quantity);
+  const user = await pool.query(
+    "SELECT * FROM users WHERE email=$1",
+    [email]
+  );
 
-    const order = await pool.query(
-      "INSERT INTO orders(user_id,total_price) VALUES($1,$2) RETURNING *",
-      [req.user.id, total]
-    );
+  if (!user.rows.length)
+    return res.status(400).json({ error: "User not found" });
 
-    const orderId = order.rows[0].id;
+  const u = user.rows[0];
 
-    for (let item of cart.rows) {
-      await pool.query(
-        `INSERT INTO order_items(order_id,product_id,quantity,price)
-         VALUES($1,$2,$3,$4)`,
-        [orderId, item.product_id, item.quantity, item.price]
-      );
-    }
+  if (!u.is_verified)
+    return res.status(400).json({ error: "Verify OTP first" });
 
-    await pool.query("DELETE FROM cart WHERE user_id=$1", [req.user.id]);
+  const ok = await bcrypt.compare(password, u.password);
 
-    res.json({ success: true, orderId });
+  if (!ok)
+    return res.status(400).json({ error: "Wrong password" });
 
-  } catch (e) {
-    console.error("CHECKOUT ERROR:", e);
-    res.status(500).json({ error: e.message });
-  }
+  const token = jwt.sign(
+    { id: u.id, role: u.role },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+
+  res.json({ token, user: u });
 });
 
-// =======================
-// 📦 ORDERS
-// =======================
-app.get('/orders', auth, async (req, res) => {
-  try {
-    const data = await pool.query(
-      "SELECT * FROM orders WHERE user_id=$1",
-      [req.user.id]
-    );
+// ================= PROFILE UPDATE =================
+app.put("/profile", auth, async (req, res) => {
+  const { name, email, password } = req.body;
 
-    res.json(data.rows);
-  } catch (e) {
-    console.error("ORDERS ERROR:", e);
-    res.status(500).json({ error: e.message });
+  if (password) {
+    const hash = await bcrypt.hash(password, 10);
+
+    await pool.query(
+      "UPDATE users SET name=$1,email=$2,password=$3 WHERE id=$4",
+      [name, email, hash, req.user.id]
+    );
+  } else {
+    await pool.query(
+      "UPDATE users SET name=$1,email=$2 WHERE id=$3",
+      [name, email, req.user.id]
+    );
   }
+
+  res.json({ success: true });
 });
 
-// =======================
-const PORT = process.env.PORT || 3000;
+// ================= PRODUCTS =================
+app.get("/products", async (req, res) => {
+  const data = await pool.query(
+    "SELECT * FROM products ORDER BY id DESC"
+  );
 
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT + " 🚀");
+  res.json(data.rows);
+});
+
+// ADD PRODUCT
+app.post("/products", auth, upload.single("image"), async (req, res) => {
+  const { name, price } = req.body;
+
+  const result = await pool.query(
+    `INSERT INTO products(name,price,seller_id,image)
+     VALUES($1,$2,$3,$4) RETURNING *`,
+    [name, price, req.user.id, req.file?.filename]
+  );
+
+  res.json(result.rows[0]);
+});
+
+// DELETE PRODUCT
+app.delete("/products/:id", auth, async (req, res) => {
+  await pool.query(
+    "DELETE FROM products WHERE id=$1 AND seller_id=$2",
+    [req.params.id, req.user.id]
+  );
+
+  res.json({ success: true });
+});
+
+// UPDATE PRODUCT
+app.put("/products/:id", auth, async (req, res) => {
+  const { name, price } = req.body;
+
+  await pool.query(
+    "UPDATE products SET name=$1,price=$2 WHERE id=$3 AND seller_id=$4",
+    [name, price, req.params.id, req.user.id]
+  );
+
+  res.json({ success: true });
+});
+
+// ================= CART =================
+app.post("/cart", auth, async (req, res) => {
+  const { product_id, quantity } = req.body;
+
+  await pool.query(
+    "INSERT INTO cart(user_id,product_id,quantity) VALUES($1,$2,$3)",
+    [req.user.id, product_id, quantity]
+  );
+
+  res.json({ success: true });
+});
+
+app.get("/cart", auth, async (req, res) => {
+  const data = await pool.query(
+    `SELECT c.*,p.name,p.price
+     FROM cart c
+     JOIN products p ON p.id=c.product_id
+     WHERE c.user_id=$1`,
+    [req.user.id]
+  );
+
+  res.json(data.rows);
+});
+
+// ================= CHECKOUT =================
+app.post("/checkout", auth, async (req, res) => {
+  const cart = await pool.query(
+    `SELECT c.*,p.price FROM cart c
+     JOIN products p ON p.id=c.product_id
+     WHERE c.user_id=$1`,
+    [req.user.id]
+  );
+
+  let total = 0;
+
+  cart.rows.forEach(i => {
+    total += i.price * i.quantity;
+  });
+
+  await pool.query(
+    "INSERT INTO orders(user_id,total_price) VALUES($1,$2)",
+    [req.user.id, total]
+  );
+
+  await pool.query("DELETE FROM cart WHERE user_id=$1", [
+    req.user.id,
+  ]);
+
+  res.json({ success: true });
+});
+
+// ================= ORDERS =================
+app.get("/orders", auth, async (req, res) => {
+  const data = await pool.query(
+    "SELECT * FROM orders WHERE user_id=$1 ORDER BY id DESC",
+    [req.user.id]
+  );
+
+  res.json(data.rows);
+});
+
+// ================= START SERVER =================
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Server running on port", PORT, "🚀");
 });
