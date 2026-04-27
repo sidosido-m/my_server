@@ -250,7 +250,21 @@ app.get("/orders", auth, async (req, res) => {
 
   res.json(data.rows);
 });
-
+// ================= TESTE DB =================
+app.get("/test-db", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    res.json({
+      success: true,
+      time: result.rows[0],
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 // ================= START SERVER =================
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on port", PORT, "🚀");
