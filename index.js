@@ -54,7 +54,7 @@ const auth = (req, res, next) => {
 // =======================
 // 👤 REGISTER
 // =======================
-app.post('/register', async (req, res) => {
+app.post("/register", async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
@@ -70,14 +70,14 @@ app.post('/register', async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
 
     await pool.query(
-      "INSERT INTO users(name,email,password,role) VALUES($1,$2,$3,$4)",
-      [name, email, hash, role]
+      "INSERT INTO users(name,email,password,role,is_verified) VALUES($1,$2,$3,$4,$5)",
+      [name, email, hash, role, true]
     );
 
     res.json({ success: true });
 
   } catch (e) {
-    console.error("REGISTER ERROR:", e);
+    console.log("REGISTER ERROR ❌", e); // 🔥 مهم
     res.status(500).json({ error: e.message });
   }
 });
