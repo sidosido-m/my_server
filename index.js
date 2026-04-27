@@ -15,8 +15,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// ================= DB TEST =================
+pool.query("SELECT NOW()")
+  .then(() => console.log("DB Connected ✅"))
+  .catch(err => console.error("DB Error ❌", err));
 
 // ================= UPLOAD =================
 if (!fs.existsSync("uploads")) {
@@ -62,88 +67,107 @@ app.post("/register", async (req, res) => {
     res.json({ success: true, otp });
 
   } catch (err) {
+    console.error("REGISTER ERROR ❌", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 // ================= VERIFY OTP =================
 app.post("/verify-otp", async (req, res) => {
-  const { email, otp } = req.body;
+  try {
+    const { email, otp } = req.body;
 
-  const user = await pool.query(
-    "SELECT * FROM users WHERE email=$1",
-    [email]
-  );
+    const user = await pool.query(
+      "SELECT * FROM users WHERE email=$1",
+      [email]
+    );
 
-  if (!user.rows.length)
-    return res.status(400).json({ error: "User not found" });
+    if (!user.rows.length)
+      return res.status(400).json({ error: "User not found" });
 
-  const u = user.rows[0];
+    const u = user.rows[0];
 
-  if (u.otp != otp)
-    return res.status(400).json({ error: "Wrong OTP" });
+    if (u.otp != otp)
+      return res.status(400).json({ error: "Wrong OTP" });
 
-  if (new Date() > new Date(u.otp_expire))
-    return res.status(400).json({ error: "OTP expired" });
+    if (new Date() > new Date(u.otp_expire))
+      return res.status(400).json({ error: "OTP expired" });
 
-  await pool.query(
-    "UPDATE users SET is_verified=true, otp=NULL WHERE email=$1",
-    [email]
-  );
+    await pool.query(
+      "UPDATE users SET is_verified=true, otp=NULL WHERE email=$1",
+      [email]
+    );
 
-  res.json({ success: true });
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("OTP ERROR ❌", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ================= LOGIN =================
 app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  const user = await pool.query(
-    "SELECT * FROM users WHERE email=$1",
-    [email]
-  );
+    const user = await pool.query(
+      "SELECT * FROM users WHERE email=$1",
+      [email]
+    );
 
-  if (!user.rows.length)
-    return res.status(400).json({ error: "User not found" });
+    if (!user.rows.length)
+      return res.status(400).json({ error: "User not found" });
 
-  const u = user.rows[0];
+    const u = user.rows[0];
 
-  if (!u.is_verified)
-    return res.status(400).json({ error: "Verify OTP first" });
+    if (!u.is_verified)
+      return res.status(400).json({ error: "Verify OTP first" });
 
-  const ok = await bcrypt.compare(password, u.password);
+    const ok = await bcrypt.compare(password, u.password);
 
-  if (!ok)
-    return res.status(400).json({ error: "Wrong password" });
+    if (!ok)
+      return res.status(400).json({ error: "Wrong password" });
 
-  const token = jwt.sign(
-    { id: u.id, role: u.role },
-    JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+    const token = jwt.sign(
+      { id: u.id, role: u.role },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
-  res.json({ token, user: u });
+    res.json({ token, user: u });
+
+  } catch (err) {
+    console.error("LOGIN ERROR ❌", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ================= PROFILE UPDATE =================
+// ================= PROFILE =================
 app.put("/profile", auth, async (req, res) => {
-  const { name, email, password } = req.body;
+  try {
+    const { name, email, password } = req.body;
 
-  if (password) {
-    const hash = await bcrypt.hash(password, 10);
+    if (password) {
+      const hash = await bcrypt.hash(password, 10);
 
-    await pool.query(
-      "UPDATE users SET name=$1,email=$2,password=$3 WHERE id=$4",
-      [name, email, hash, req.user.id]
-    );
-  } else {
-    await pool.query(
-      "UPDATE users SET name=$1,email=$2 WHERE id=$3",
-      [name, email, req.user.id]
-    );
+      await pool.query(
+        "UPDATE users SET name=$1,email=$2,password=$3 WHERE id=$4",
+        [name, email, hash, req.user.id]
+      );
+    } else {
+      await pool.query(
+        "UPDATE users SET name=$1,email=$2 WHERE id=$3",
+        [name, email, req.user.id]
+      );
+    }
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("PROFILE ERROR ❌", err);
+    res.status(500).json({ error: err.message });
   }
-
-  res.json({ success: true });
 });
 
 // ================= PRODUCTS =================
@@ -151,11 +175,9 @@ app.get("/products", async (req, res) => {
   const data = await pool.query(
     "SELECT * FROM products ORDER BY id DESC"
   );
-
   res.json(data.rows);
 });
 
-// ADD PRODUCT
 app.post("/products", auth, upload.single("image"), async (req, res) => {
   const { name, price } = req.body;
 
@@ -168,17 +190,14 @@ app.post("/products", auth, upload.single("image"), async (req, res) => {
   res.json(result.rows[0]);
 });
 
-// DELETE PRODUCT
 app.delete("/products/:id", auth, async (req, res) => {
   await pool.query(
     "DELETE FROM products WHERE id=$1 AND seller_id=$2",
     [req.params.id, req.user.id]
   );
-
   res.json({ success: true });
 });
 
-// UPDATE PRODUCT
 app.put("/products/:id", auth, async (req, res) => {
   const { name, price } = req.body;
 
@@ -250,7 +269,8 @@ app.get("/orders", auth, async (req, res) => {
 
   res.json(data.rows);
 });
-// ================= TESTE DB =================
+
+// ================= TEST DB =================
 app.get("/test-db", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
@@ -259,13 +279,20 @@ app.get("/test-db", async (req, res) => {
       time: result.rows[0],
     });
   } catch (err) {
+    console.error("TEST DB ERROR ❌", err);
     res.status(500).json({
       success: false,
       error: err.message,
     });
   }
 });
-// ================= START SERVER =================
+
+// ================= ROOT =================
+app.get("/", (req, res) => {
+  res.send("Server is running 🚀");
+});
+
+// ================= START =================
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on port", PORT, "🚀");
 });

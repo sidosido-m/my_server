@@ -1,17 +1,16 @@
 {
   "name": "my_server",
   "version": "1.0.0",
-  "description": "",
+  "description": "Marketplace backend API",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon index.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["node", "express", "api", "marketplace"],
+  "author": "your_name",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
@@ -25,12 +24,7 @@
   "devDependencies": {
     "nodemon": "^3.1.14"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sidosido-m/my_server.git"
-  },
-  "bugs": {
-    "url": "https://github.com/sidosido-m/my_server/issues"
-  },
-  "homepage": "https://github.com/sidosido-m/my_server#readme"
+  "engines": {
+    "node": ">=18"
+  }
 }
