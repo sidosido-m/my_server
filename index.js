@@ -109,9 +109,10 @@ app.post('/login', async (req, res) => {
     );
 
     res.json({
-      token,
-      user: user.rows[0]
-    });
+  message: "HELLO FROM SERVER 🚀",
+  token,
+  user: dbUser
+});
 
   } catch (e) {
     console.error("LOGIN ERROR:", e);
