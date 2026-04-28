@@ -8,7 +8,12 @@
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
-  "keywords": ["node", "express", "api", "marketplace"],
+  "keywords": [
+    "node",
+    "express",
+    "api",
+    "marketplace"
+  ],
   "author": "your_name",
   "license": "ISC",
   "dependencies": {
@@ -18,7 +23,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
-    "nodemailer": "^8.0.6",
+    "nodemailer": "^8.0.7",
     "pg": "^8.20.0"
   },
   "devDependencies": {

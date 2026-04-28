@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const fs = require("fs");
 const bcrypt = require("bcrypt");
+const transporter = require("./config/mail");
 
 const auth = require("./middleware/auth");
 
@@ -42,32 +43,50 @@ app.use("/uploads", express.static("uploads"));
 // ================= REGISTER =================
 app.post("/register", async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, username, email, password, role } = req.body;
 
-    const check = await pool.query(
+    const emailCheck = await pool.query(
       "SELECT * FROM users WHERE email=$1",
       [email]
     );
 
-    if (check.rows.length > 0) {
+    if (emailCheck.rows.length > 0) {
       return res.status(400).json({ error: "Email already exists" });
+    }
+
+    const usernameCheck = await pool.query(
+      "SELECT * FROM users WHERE username=$1",
+      [username]
+    );
+
+    if (usernameCheck.rows.length > 0) {
+      return res.status(400).json({ error: "Username already exists" });
     }
 
     const hash = await bcrypt.hash(password, 10);
 
     const otp = Math.floor(100000 + Math.random() * 900000);
-    const expire = new Date(Date.now() + 5 * 60 * 1000);
+    const otpExpire = new Date(Date.now() + 10 * 60 * 1000);
 
     await pool.query(
-      `INSERT INTO users(name,email,password,role,otp,otp_expire,is_verified)
-       VALUES($1,$2,$3,$4,$5,$6,$7)`,
-      [name, email, hash, role, otp, expire, false]
+      `INSERT INTO users (name, username, email, password, role, otp, otp_expire, is_verified)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [name, username, email, hash, role, otp, otpExpire, false]
     );
 
-    res.json({ success: true, otp });
+    await transporter.sendMail({
+      from: "Marketplace",
+      to: email,
+      subject: "OTP Code",
+      text: `Your OTP is: ${otp}`
+    });
+
+    res.json({
+      success: true,
+      message: "OTP sent"
+    });
 
   } catch (err) {
-    console.error("REGISTER ERROR ❌", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -77,31 +96,76 @@ app.post("/verify-otp", async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    const user = await pool.query(
+    const result = await pool.query(
       "SELECT * FROM users WHERE email=$1",
       [email]
     );
 
-    if (!user.rows.length)
-      return res.status(400).json({ error: "User not found" });
+    const user = result.rows[0];
 
-    const u = user.rows[0];
+    if (!user) {
+      return res.json({ success: false, error: "User not found" });
+    }
 
-    if (u.otp != otp)
-      return res.status(400).json({ error: "Wrong OTP" });
+    if (user.is_verified) {
+      return res.json({ success: true, message: "Already verified" });
+    }
 
-    if (new Date() > new Date(u.otp_expire))
-      return res.status(400).json({ error: "OTP expired" });
+    if (user.otp != otp) {
+      return res.json({ success: false, error: "Wrong OTP" });
+    }
+
+    if (new Date() > user.otp_expire) {
+      return res.json({ success: false, error: "OTP expired" });
+    }
 
     await pool.query(
-      "UPDATE users SET is_verified=true, otp=NULL WHERE email=$1",
+      `UPDATE users 
+       SET is_verified=true, otp=null, otp_expire=null
+       WHERE email=$1`,
       [email]
     );
+
+    // 🔥 auto login token
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        role: user.role,
+        email: user.email
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+// ================= RESEND OTP =================
+app.post("/resend-otp", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const otp = Math.floor(100000 + Math.random() * 900000);
+    const expire = new Date(Date.now() + 5 * 60 * 1000);
+
+    await pool.query(
+      "UPDATE users SET otp=$1, otp_expire=$2 WHERE email=$3",
+      [otp, expire, email]
+    );
+
+    console.log("New OTP:", otp);
 
     res.json({ success: true });
 
   } catch (err) {
-    console.error("OTP ERROR ❌", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -111,38 +175,49 @@ app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await pool.query(
+    const result = await pool.query(
       "SELECT * FROM users WHERE email=$1",
       [email]
     );
 
-    if (!user.rows.length)
+    if (result.rows.length === 0) {
       return res.status(400).json({ error: "User not found" });
+    }
 
-    const u = user.rows[0];
+    const user = result.rows[0];
 
-    if (!u.is_verified)
-      return res.status(400).json({ error: "Verify OTP first" });
+    // ❗ OTP CHECK FIRST
+    if (!user.is_verified) {
+      return res.json({
+        success: false,
+        needOtp: true,
+        email: user.email
+      });
+    }
 
-    const ok = await bcrypt.compare(password, u.password);
+    const ok = await bcrypt.compare(password, user.password);
 
-    if (!ok)
+    if (!ok) {
       return res.status(400).json({ error: "Wrong password" });
+    }
 
     const token = jwt.sign(
-      { id: u.id, role: u.role },
-      JWT_SECRET,
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    res.json({ token, user: u });
+    res.json({
+      success: true,
+      token,
+      user
+    });
 
   } catch (err) {
-    console.error("LOGIN ERROR ❌", err);
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
-
 // ================= PROFILE =================
 app.put("/profile", auth, async (req, res) => {
   try {
@@ -259,6 +334,18 @@ app.post("/checkout", auth, async (req, res) => {
 
   res.json({ success: true });
 });
+// ================= CONFIG =================
+const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "toopvedeo00@gmaile.com",
+    pass: "bsxb ofbu nodu qdkc"
+  }
+});
+
+module.exports = transporter;
 
 // ================= ORDERS =================
 app.get("/orders", auth, async (req, res) => {
