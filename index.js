@@ -80,12 +80,6 @@ app.post("/register", async (req, res) => {
     // 🔥 TEMP: send OTP in response (for testing)
 console.log("OTP:", otp);
 
-res.json({
-  success: true,
-  message: "OTP generated",
-  otp: otp, // 👈 مهم
-  email: email
-});
 
    res.json({
   success: true,
