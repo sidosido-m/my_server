@@ -84,10 +84,11 @@ app.post("/register", async (req, res) => {
       text: `Your OTP is: ${otp}`
     });
 
-    res.json({
-      success: true,
-      message: "OTP sent"
-    });
+   res.json({
+  success: true,
+  needOtp: true,
+  email: email
+});
 
   } catch (err) {
     res.status(500).json({ error: err.message });
