@@ -135,10 +135,10 @@ app.post("/verify-otp", async (req, res) => {
 
     // 🔥 auto login token
     const token = jwt.sign(
-      { id: user.id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+  { id: user.id, role: user.role },
+  "mysecret123",
+  { expiresIn: "7d" }
+);
 
     res.json({
       success: true,
