@@ -77,12 +77,15 @@ app.post("/register", async (req, res) => {
       [name, username, email, hash, role, otp, otpExpire, false]
     );
 
-    await transporter.sendMail({
-      from: "Marketplace",
-      to: email,
-      subject: "OTP Code",
-      text: `Your OTP is: ${otp}`
-    });
+    // 🔥 TEMP: send OTP in response (for testing)
+console.log("OTP:", otp);
+
+res.json({
+  success: true,
+  message: "OTP generated",
+  otp: otp, // 👈 مهم
+  email: email
+});
 
    res.json({
   success: true,
