@@ -1,4 +1,5 @@
 require("dotenv").config();
+console.log("SERVER STARTING...");
 
 const express = require("express");
 const cors = require("cors");
@@ -22,7 +23,9 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // ================= DB TEST =================
 pool.query("SELECT NOW()")
   .then(() => console.log("DB Connected ✅"))
-  .catch(err => console.error("DB Error ❌", err));
+  .catch(err => {
+    console.error("DB Error ❌", err);
+  });
 
 // ================= UPLOAD =================
 if (!fs.existsSync("uploads")) {
@@ -334,18 +337,6 @@ app.post("/checkout", auth, async (req, res) => {
 
   res.json({ success: true });
 });
-// ================= CONFIG =================
-const nodemailer = require("nodemailer");
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: "toopvedeo00@gmaile.com",
-    pass: "bsxb ofbu nodu qdkc"
-  }
-});
-
-module.exports = transporter;
 
 // ================= ORDERS =================
 app.get("/orders", auth, async (req, res) => {
