@@ -273,19 +273,18 @@ app.get("/seller/:id", async (req, res) => {
   const id = req.params.id;
 
   const user = await pool.query(
-    "SELECT id,name,email,image FROM users WHERE id=$1",
+    "SELECT id, name, email, image FROM users WHERE id=$1",
     [id]
   );
 
   const products = await pool.query(
-    "SELECT * FROM products WHERE seller_id=$1",
+    "SELECT COUNT(*) FROM products WHERE seller_id=$1",
     [id]
   );
 
   res.json({
     user: user.rows[0],
-    products: products.rows,
-    count: products.rows.length
+    productsCount: products.rows[0].count
   });
 });
 // ================= CART =================
