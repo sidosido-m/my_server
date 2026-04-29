@@ -111,22 +111,25 @@ app.post("/verify-otp", async (req, res) => {
 // ================= RESEND OTP =================
 app.post("/resend-otp", async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body; // ❗ كان undefined
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: "Email missing",
+      });
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000);
-    const otpExpire = new Date(Date.now() + 60 * 1000);
 
     await pool.query(
-      "UPDATE users SET otp=$1, otp_expire=$2 WHERE email=$3",
-      [otp, otpExpire, email]
+      "UPDATE users SET otp=$1 WHERE email=$2",
+      [otp, email]
     );
 
-    console.log("New OTP:", otp);
+    console.log("OTP:", otp);
 
-    res.json({
-      success: true,
-      otp,
-    });
+    res.json({ success: true });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
