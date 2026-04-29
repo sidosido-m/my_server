@@ -48,32 +48,25 @@ app.post("/register", async (req, res) => {
   try {
     const { name, username, email, password, role } = req.body;
 
-    const emailCheck = await pool.query(
-      "SELECT * FROM users WHERE email=$1",
-      [email]
-    );
-
-    if (emailCheck.rows.length > 0) {
-      return res.status(400).json({ error: "Email already exists" });
-    }
-
     const hash = await bcrypt.hash(password, 10);
 
-    // 🔥 OTP GENERATED (FOR APP ONLY)
     const otp = Math.floor(100000 + Math.random() * 900000);
+    const otpExpire = new Date(Date.now() + 60 * 1000); // 1 min
 
     const result = await pool.query(
-      `INSERT INTO users (name, username, email, password, role, otp, is_verified)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING id, email, role, otp`,
-      [name, username, email, hash, role, otp, false]
+      `INSERT INTO users (name, username, email, password, role, otp, otp_expire, is_verified)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING email`,
+      [name, username, email, hash, role, otp, otpExpire, false]
     );
 
+    console.log("OTP:", otp);
+
     res.json({
-  success: true,
-  email: email,
-  user: result.rows[0]
-});
+      success: true,
+      email,
+      otp, // للتجربة فقط
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -99,29 +92,20 @@ app.post("/verify-otp", async (req, res) => {
     if (user.otp != otp) {
       return res.json({ success: false, error: "Wrong OTP" });
     }
-    if (user.otp_expire && new Date() > user.otp_expire) {
-  return res.json({ success: false, error: "OTP expired" });
-}
+
+    if (new Date() > user.otp_expire) {
+      return res.json({ success: false, error: "OTP expired" });
+    }
 
     await pool.query(
-      "UPDATE users SET is_verified=true, otp=null WHERE email=$1",
+      "UPDATE users SET is_verified=true, otp=null, otp_expire=null WHERE email=$1",
       [email]
     );
 
-    const token = jwt.sign(
-      { id: user.id, role: user.role },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.json({
-      success: true,
-      token,
-      user
-    });
+    res.json({ success: true });
 
   } catch (err) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 // ================= RESEND OTP =================
@@ -130,16 +114,19 @@ app.post("/resend-otp", async (req, res) => {
     const { email } = req.body;
 
     const otp = Math.floor(100000 + Math.random() * 900000);
-    const expire = new Date(Date.now() + 5 * 60 * 1000);
+    const otpExpire = new Date(Date.now() + 60 * 1000);
 
     await pool.query(
       "UPDATE users SET otp=$1, otp_expire=$2 WHERE email=$3",
-      [otp, expire, email]
+      [otp, otpExpire, email]
     );
 
     console.log("New OTP:", otp);
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      otp,
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
