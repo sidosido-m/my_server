@@ -57,34 +57,22 @@ app.post("/register", async (req, res) => {
       return res.status(400).json({ error: "Email already exists" });
     }
 
-    const usernameCheck = await pool.query(
-      "SELECT * FROM users WHERE username=$1",
-      [username]
-    );
-
-    if (usernameCheck.rows.length > 0) {
-      return res.status(400).json({ error: "Username already exists" });
-    }
-
     const hash = await bcrypt.hash(password, 10);
 
+    // 🔥 OTP GENERATED (FOR APP ONLY)
     const otp = Math.floor(100000 + Math.random() * 900000);
-    const otpExpire = new Date(Date.now() + 10 * 60 * 1000);
 
-    await pool.query(
-      `INSERT INTO users (name, username, email, password, role, otp, otp_expire, is_verified)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [name, username, email, hash, role, otp, otpExpire, false]
+    const result = await pool.query(
+      `INSERT INTO users (name, username, email, password, role, otp, is_verified)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING id, email, role, otp`,
+      [name, username, email, hash, role, otp, false]
     );
 
-    // 🔥 TEMP: send OTP in response (for testing)
-console.log("OTP:", otp);
-
-
-   res.json({
+    res.json({
   success: true,
-  needOtp: true,
-  email: email
+  email: email,
+  user: result.rows[0]
 });
 
   } catch (err) {
@@ -108,44 +96,31 @@ app.post("/verify-otp", async (req, res) => {
       return res.json({ success: false, error: "User not found" });
     }
 
-    if (user.is_verified) {
-      return res.json({ success: true, message: "Already verified" });
-    }
-
     if (user.otp != otp) {
       return res.json({ success: false, error: "Wrong OTP" });
     }
-
-    if (new Date() > user.otp_expire) {
-      return res.json({ success: false, error: "OTP expired" });
-    }
+    if (user.otp_expire && new Date() > user.otp_expire) {
+  return res.json({ success: false, error: "OTP expired" });
+}
 
     await pool.query(
-      `UPDATE users 
-       SET is_verified=true, otp=null, otp_expire=null
-       WHERE email=$1`,
+      "UPDATE users SET is_verified=true, otp=null WHERE email=$1",
       [email]
     );
 
-    // 🔥 auto login token
     const token = jwt.sign(
-  { id: user.id, role: user.role },
-  "mysecret123",
-  { expiresIn: "7d" }
-);
+      { id: user.id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     res.json({
       success: true,
       token,
-      user: {
-        id: user.id,
-        role: user.role,
-        email: user.email
-      }
+      user
     });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -248,10 +223,19 @@ app.put("/profile", auth, async (req, res) => {
 
 // ================= PRODUCTS =================
 app.get("/products", async (req, res) => {
-  const data = await pool.query(
-    "SELECT * FROM products ORDER BY id DESC"
-  );
-  res.json(data.rows);
+  try {
+    const data = await pool.query(
+      `SELECT p.*, u.name as seller_name
+       FROM products p
+       JOIN users u ON u.id = p.seller_id
+       ORDER BY p.id DESC`
+    );
+
+    res.json(data.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.post("/products", auth, upload.single("image"), async (req, res) => {
@@ -284,29 +268,48 @@ app.put("/products/:id", auth, async (req, res) => {
 
   res.json({ success: true });
 });
+// ================= SELLER PROFILE =================
+app.get("/seller/:id", async (req, res) => {
+  const id = req.params.id;
 
+  const user = await pool.query(
+    "SELECT id,name,email,image FROM users WHERE id=$1",
+    [id]
+  );
+
+  const products = await pool.query(
+    "SELECT * FROM products WHERE seller_id=$1",
+    [id]
+  );
+
+  res.json({
+    user: user.rows[0],
+    products: products.rows,
+    count: products.rows.length
+  });
+});
 // ================= CART =================
 app.post("/cart", auth, async (req, res) => {
   const { product_id, quantity } = req.body;
 
-  await pool.query(
-    "INSERT INTO cart(user_id,product_id,quantity) VALUES($1,$2,$3)",
-    [req.user.id, product_id, quantity]
+  const exists = await pool.query(
+    "SELECT * FROM cart WHERE user_id=$1 AND product_id=$2",
+    [req.user.id, product_id]
   );
+
+  if (exists.rows.length > 0) {
+    await pool.query(
+      "UPDATE cart SET quantity = quantity + 1 WHERE user_id=$1 AND product_id=$2",
+      [req.user.id, product_id]
+    );
+  } else {
+    await pool.query(
+      "INSERT INTO cart(user_id,product_id,quantity) VALUES($1,$2,$3)",
+      [req.user.id, product_id, quantity]
+    );
+  }
 
   res.json({ success: true });
-});
-
-app.get("/cart", auth, async (req, res) => {
-  const data = await pool.query(
-    `SELECT c.*,p.name,p.price
-     FROM cart c
-     JOIN products p ON p.id=c.product_id
-     WHERE c.user_id=$1`,
-    [req.user.id]
-  );
-
-  res.json(data.rows);
 });
 
 // ================= CHECKOUT =================
@@ -335,11 +338,47 @@ app.post("/checkout", auth, async (req, res) => {
 
   res.json({ success: true });
 });
+// ================= MESSAGE =================
+app.post("/messages", auth, async (req, res) => {
+  const { receiver_id, message } = req.body;
 
+  const result = await pool.query(
+    `INSERT INTO messages(sender_id, receiver_id, message)
+     VALUES($1,$2,$3) RETURNING *`,
+    [req.user.id, receiver_id, message]
+  );
+
+  res.json(result.rows[0]);
+});
+
+app.get("/messages/:userId", auth, async (req, res) => {
+  try {
+    const otherUser = parseInt(req.params.userId);
+    const limit = 50;
+
+    const result = await pool.query(
+      `SELECT * FROM messages
+       WHERE (sender_id=$1 AND receiver_id=$2)
+          OR (sender_id=$2 AND receiver_id=$1)
+       ORDER BY created_at ASC
+       LIMIT $3`,
+      [req.user.id, otherUser, limit]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load messages" });
+  }
+});
 // ================= ORDERS =================
 app.get("/orders", auth, async (req, res) => {
   const data = await pool.query(
-    "SELECT * FROM orders WHERE user_id=$1 ORDER BY id DESC",
+    `SELECT o.*, COUNT(c.id) as items
+     FROM orders o
+     LEFT JOIN cart c ON c.user_id=o.user_id
+     WHERE o.user_id=$1
+     GROUP BY o.id
+     ORDER BY o.id DESC`,
     [req.user.id]
   );
 
