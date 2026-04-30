@@ -299,6 +299,19 @@ app.get("/seller/:id", async (req, res) => {
     productsCount: products.rows[0].count
   });
 });
+// ================= BECOME SELLER =================
+app.put("/become-seller", auth, async (req, res) => {
+  try {
+    await pool.query(
+      "UPDATE users SET role='seller' WHERE id=$1",
+      [req.user.id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // ================= CART =================
 app.post("/cart", auth, async (req, res) => {
   const { product_id, quantity } = req.body;
