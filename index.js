@@ -211,6 +211,28 @@ app.put("/profile", auth, async (req, res) => {
   }
 });
 
+
+app.get("/profile", auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, name, email, image FROM users WHERE id=$1",
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({
+  success: true,
+  user: result.rows[0]
+});
+
+  } catch (err) {
+    console.error("GET PROFILE ERROR ❌", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 // ================= PRODUCTS =================
 app.get("/products", async (req, res) => {
   try {
