@@ -61,7 +61,7 @@ app.post("/register", async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000);
     const otpExpire = new Date(Date.now() + 60 * 1000); // 1 min
 
-    const result = await pool.query(
+    await pool.query(
       `INSERT INTO users (name, username, email, password, role, otp, otp_expire, is_verified)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING email`,
@@ -70,49 +70,43 @@ app.post("/register", async (req, res) => {
 
     console.log("OTP:", otp);
 
-    // إرسال OTP بالإيميل
-// إرسال OTP بالإيميل
-await transporter.sendMail({
-  from: `"Marketplace" <${process.env.EMAIL_USER}>`,
-  to: email,
-  subject: "🔐 Verify your account",
-  html: `
-  <div style="font-family: Arial; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-    
-    <h2 style="color: #6a0dad;">Marketplace 🛒</h2>
+    // ================= EMAIL OTP =================
+    try {
+      await transporter.sendMail({
+        from: `"Marketplace" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: "🔐 Verify your account",
+        html: `
+          <div style="font-family: Arial; max-width: 500px; margin: auto; padding: 20px;">
+            <h2>Marketplace 🛒</h2>
+            <p>Hello 👋,</p>
+            <p>Your OTP code is:</p>
 
-    <p>Hello 👋,</p>
+            <div style="text-align:center; margin:20px 0;">
+              <h1 style="color:purple; letter-spacing:5px;">${otp}</h1>
+            </div>
 
-    <p>Use the following code to verify your account:</p>
+            <p>This code will expire in 1 minute ⏳</p>
+          </div>
+        `,
+      });
 
-    <div style="text-align: center; margin: 20px 0;">
-      <span style="font-size: 30px; font-weight: bold; letter-spacing: 5px; color: #6a0dad;">
-        ${otp}
-      </span>
-    </div>
+      console.log("EMAIL SENT ✅");
+    } catch (err) {
+      console.log("EMAIL ERROR ❌", err.message);
+    }
 
-    <p>This code will expire in <b>1 minute</b>.</p>
-
-    <p>If you didn’t request this, you can safely ignore this email.</p>
-
-    <hr/>
-
-    <small>© 2026 Marketplace App</small>
-  </div>
-  `
-});
-
-// رجّع response بدون OTP
-res.json({
-  success: true,
-  email
-});
+    // IMPORTANT: always return response
+    return res.json({
+      success: true,
+      email,
+    });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.log("REGISTER ERROR ❌", err.message);
+    return res.status(500).json({ error: err.message });
   }
 });
-
 // ================= VERIFY OTP =================
 app.post("/verify-otp", async (req, res) => {
   try {
@@ -151,7 +145,7 @@ app.post("/verify-otp", async (req, res) => {
 // ================= RESEND OTP =================
 app.post("/resend-otp", async (req, res) => {
   try {
-    const { email } = req.body; // ❗ كان undefined
+    const { email } = req.body;
 
     if (!email) {
       return res.status(400).json({
@@ -159,53 +153,49 @@ app.post("/resend-otp", async (req, res) => {
         error: "Email missing",
       });
     }
+
     const otp = Math.floor(100000 + Math.random() * 900000);
     const otpExpire = new Date(Date.now() + 60 * 1000);
 
-await pool.query(
-  "UPDATE users SET otp=$1, otp_expire=$2 WHERE email=$3",
-  [otp, otpExpire, email]
-);
+    await pool.query(
+      "UPDATE users SET otp=$1, otp_expire=$2 WHERE email=$3",
+      [otp, otpExpire, email]
+    );
 
-// إرسال OTP بالإيميل
-await transporter.sendMail({
-  from: `"Marketplace" <${process.env.EMAIL_USER}>`,
-  to: email,
-  subject: "🔐 Verify your account",
-  html: `
-  <div style="font-family: Arial; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-    
-    <h2 style="color: #6a0dad;">Marketplace 🛒</h2>
+    console.log("NEW OTP:", otp);
 
-    <p>Hello 👋,</p>
+    // ================= EMAIL =================
+    try {
+      await transporter.sendMail({
+        from: `"Marketplace" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: "🔐 New OTP Code",
+        html: `
+          <div style="font-family: Arial; max-width: 500px; margin: auto;">
+            <h2>Marketplace 🛒</h2>
+            <p>Your new OTP code is:</p>
 
-    <p>Use the following code to verify your account:</p>
+            <div style="text-align:center; margin:20px 0;">
+              <h1 style="color:purple;">${otp}</h1>
+            </div>
 
-    <div style="text-align: center; margin: 20px 0;">
-      <span style="font-size: 30px; font-weight: bold; letter-spacing: 5px; color: #6a0dad;">
-        ${otp}
-      </span>
-    </div>
+            <p>Expires in 1 minute ⏳</p>
+          </div>
+        `,
+      });
 
-    <p>This code will expire in <b>1 minute</b>.</p>
+      console.log("RESEND EMAIL SENT ✅");
+    } catch (err) {
+      console.log("RESEND EMAIL ERROR ❌", err.message);
+    }
 
-    <p>If you didn’t request this, you can safely ignore this email.</p>
-
-    <hr/>
-
-    <small>© 2026 Marketplace App</small>
-  </div>
-  `
-});
-
-
-res.json({ success: true });
+    return res.json({ success: true });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.log("RESEND ERROR ❌", err.message);
+    return res.status(500).json({ error: err.message });
   }
 });
-
 // ================= LOGIN =================
 app.post("/login", async (req, res) => {
   try {
@@ -502,8 +492,8 @@ app.get("/", (req, res) => {
 });
 
 // ================= START =================
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on port " + PORT);
 });
