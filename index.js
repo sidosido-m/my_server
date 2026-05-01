@@ -39,7 +39,15 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only images allowed"));
+    }
+    cb(null, true);
+  }
+});
 
 app.use("/uploads", express.static("uploads"));
 
@@ -62,11 +70,43 @@ app.post("/register", async (req, res) => {
 
     console.log("OTP:", otp);
 
-    res.json({
-      success: true,
-      email,
-      otp, // للتجربة فقط
-    });
+    // إرسال OTP بالإيميل
+// إرسال OTP بالإيميل
+await transporter.sendMail({
+  from: `"Marketplace" <${process.env.EMAIL_USER}>`,
+  to: email,
+  subject: "🔐 Verify your account",
+  html: `
+  <div style="font-family: Arial; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+    
+    <h2 style="color: #6a0dad;">Marketplace 🛒</h2>
+
+    <p>Hello 👋,</p>
+
+    <p>Use the following code to verify your account:</p>
+
+    <div style="text-align: center; margin: 20px 0;">
+      <span style="font-size: 30px; font-weight: bold; letter-spacing: 5px; color: #6a0dad;">
+        ${otp}
+      </span>
+    </div>
+
+    <p>This code will expire in <b>1 minute</b>.</p>
+
+    <p>If you didn’t request this, you can safely ignore this email.</p>
+
+    <hr/>
+
+    <small>© 2026 Marketplace App</small>
+  </div>
+  `
+});
+
+// رجّع response بدون OTP
+res.json({
+  success: true,
+  email
+});
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -120,16 +160,46 @@ app.post("/resend-otp", async (req, res) => {
       });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000);
+    const otpExpire = new Date(Date.now() + 60 * 1000);
 
-    await pool.query(
-      "UPDATE users SET otp=$1 WHERE email=$2",
-      [otp, email]
-    );
+await pool.query(
+  "UPDATE users SET otp=$1, otp_expire=$2 WHERE email=$3",
+  [otp, otpExpire, email]
+);
 
-    console.log("OTP:", otp);
+// إرسال OTP بالإيميل
+await transporter.sendMail({
+  from: `"Marketplace" <${process.env.EMAIL_USER}>`,
+  to: email,
+  subject: "🔐 Verify your account",
+  html: `
+  <div style="font-family: Arial; max-width: 500px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+    
+    <h2 style="color: #6a0dad;">Marketplace 🛒</h2>
 
-    res.json({ success: true });
+    <p>Hello 👋,</p>
+
+    <p>Use the following code to verify your account:</p>
+
+    <div style="text-align: center; margin: 20px 0;">
+      <span style="font-size: 30px; font-weight: bold; letter-spacing: 5px; color: #6a0dad;">
+        ${otp}
+      </span>
+    </div>
+
+    <p>This code will expire in <b>1 minute</b>.</p>
+
+    <p>If you didn’t request this, you can safely ignore this email.</p>
+
+    <hr/>
+
+    <small>© 2026 Marketplace App</small>
+  </div>
+  `
+});
+
+
+res.json({ success: true });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -153,13 +223,19 @@ app.post("/login", async (req, res) => {
     const user = result.rows[0];
 
     // ❗ OTP CHECK FIRST
-    if (!user.is_verified) {
-      return res.json({
-        success: false,
-        needOtp: true,
-        email: user.email
-      });
-    }
+    const ok = await bcrypt.compare(password, user.password);
+
+if (!ok) {
+  return res.status(400).json({ error: "Wrong password" });
+}
+
+if (!user.is_verified) {
+  return res.json({
+    success: false,
+    needOtp: true,
+    email: user.email
+  });
+}
 
     const ok = await bcrypt.compare(password, user.password);
 
@@ -396,19 +472,17 @@ app.get("/messages/:userId", auth, async (req, res) => {
 });
 // ================= ORDERS =================
 app.get("/orders", auth, async (req, res) => {
-  const data = await pool.query(
-    `SELECT o.*, COUNT(c.id) as items
-     FROM orders o
-     LEFT JOIN cart c ON c.user_id=o.user_id
-     WHERE o.user_id=$1
-     GROUP BY o.id
-     ORDER BY o.id DESC`,
-    [req.user.id]
-  );
+  try {
+    const data = await pool.query(
+      "SELECT * FROM orders WHERE user_id=$1 ORDER BY id DESC",
+      [req.user.id]
+    );
 
-  res.json(data.rows);
+    res.json(data.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load orders" });
+  }
 });
-
 // ================= TEST DB =================
 app.get("/test-db", async (req, res) => {
   try {
