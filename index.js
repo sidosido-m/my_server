@@ -159,7 +159,7 @@ app.post("/resend-otp", async (req, res) => {
         error: "Email missing",
       });
     }
-
+    const otp = Math.floor(100000 + Math.random() * 900000);
     const otpExpire = new Date(Date.now() + 60 * 1000);
 
 await pool.query(
@@ -222,27 +222,23 @@ app.post("/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    // ❗ OTP CHECK FIRST
-    const ok = await bcrypt.compare(password, user.password);
-
-if (!ok) {
-  return res.status(400).json({ error: "Wrong password" });
-}
-
-if (!user.is_verified) {
-  return res.json({
-    success: false,
-    needOtp: true,
-    email: user.email
-  });
-}
-
+    // 1️⃣ check password
     const ok = await bcrypt.compare(password, user.password);
 
     if (!ok) {
       return res.status(400).json({ error: "Wrong password" });
     }
 
+    // 2️⃣ check OTP verification
+    if (!user.is_verified) {
+      return res.json({
+        success: false,
+        needOtp: true,
+        email: user.email
+      });
+    }
+
+    // 3️⃣ create token
     const token = jwt.sign(
       { id: user.id, role: user.role },
       process.env.JWT_SECRET,
@@ -506,7 +502,7 @@ app.get("/", (req, res) => {
 });
 
 // ================= START =================
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT;
 
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
