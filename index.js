@@ -295,6 +295,7 @@ app.get("/profile", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ================= PRODUCTS =================
 app.get("/products", async (req, res) => {
   try {
@@ -331,17 +332,36 @@ app.delete("/products/:id", auth, async (req, res) => {
   );
   res.json({ success: true });
 });
+app.get("/my-products", auth, async (req, res) => {
+  const data = await pool.query(
+    "SELECT * FROM products WHERE seller_id=$1",
+    [req.user.id]
+  );
+
+  res.json(data.rows);
+});
 
 app.put("/products/:id", auth, async (req, res) => {
   const { name, price } = req.body;
 
-  await pool.query(
-    "UPDATE products SET name=$1,price=$2 WHERE id=$3 AND seller_id=$4",
+  const result = await pool.query(
+    `UPDATE products 
+     SET name=$1, price=$2 
+     WHERE id=$3 AND seller_id=$4
+     RETURNING *`,
     [name, price, req.params.id, req.user.id]
   );
 
-  res.json({ success: true });
+  if (result.rowCount === 0) {
+    return res.status(403).json({
+      success: false,
+      error: "Not allowed ❌"
+    });
+  }
+
+  res.json({ success: true, product: result.rows[0] });
 });
+
 // ================= SELLER PROFILE =================
 app.get("/seller/:id", async (req, res) => {
   const id = req.params.id;
