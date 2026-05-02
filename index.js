@@ -263,10 +263,12 @@ app.get("/profile", auth, async (req, res) => {
 });
 
 // ================= PRODUCTS =================
+
+// 🔥 GET ALL PRODUCTS (لكل المستخدمين - الصفحة الرئيسية)
 app.get("/products", async (req, res) => {
   try {
     const data = await pool.query(
-      `SELECT p.*, u.name as seller_name
+      `SELECT p.*, u.name as seller_name, u.image as seller_image
        FROM products p
        JOIN users u ON u.id = p.seller_id
        ORDER BY p.id DESC`
@@ -274,60 +276,114 @@ app.get("/products", async (req, res) => {
 
     res.json(data.rows);
   } catch (err) {
-    console.error(err);
+    console.error("GET PRODUCTS ERROR ❌", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-app.post("/products", auth, upload.single("image"), async (req, res) => {
-  const { name, price } = req.body;
 
-  const result = await pool.query(
-    `INSERT INTO products(name,price,seller_id,image)
-     VALUES($1,$2,$3,$4) RETURNING *`,
-    [name, price, req.user.id, req.file?.filename]
-  );
-
-  res.json(result.rows[0]);
-});
-
-app.delete("/products/:id", auth, async (req, res) => {
-  await pool.query(
-    "DELETE FROM products WHERE id=$1 AND seller_id=$2",
-    [req.params.id, req.user.id]
-  );
-  res.json({ success: true });
-});
+// 🔥 GET MY PRODUCTS (منتجات المستخدم فقط)
 app.get("/my-products", auth, async (req, res) => {
-  const data = await pool.query(
-    "SELECT * FROM products WHERE seller_id=$1",
-    [req.user.id]
-  );
+  try {
+    const data = await pool.query(
+      "SELECT * FROM products WHERE seller_id=$1 ORDER BY id DESC",
+      [req.user.id]
+    );
 
-  res.json(data.rows);
-});
-
-app.put("/products/:id", auth, async (req, res) => {
-  const { name, price } = req.body;
-
-  const result = await pool.query(
-    `UPDATE products 
-     SET name=$1, price=$2 
-     WHERE id=$3 AND seller_id=$4
-     RETURNING *`,
-    [name, price, req.params.id, req.user.id]
-  );
-
-  if (result.rowCount === 0) {
-    return res.status(403).json({
-      success: false,
-      error: "Not allowed ❌"
-    });
+    res.json(data.rows);
+  } catch (err) {
+    console.error("MY PRODUCTS ERROR ❌", err);
+    res.status(500).json({ error: "Server error" });
   }
-
-  res.json({ success: true, product: result.rows[0] });
 });
 
+
+// 🔥 ADD PRODUCT
+app.post("/products", auth, upload.single("image"), async (req, res) => {
+  try {
+    const { name, price } = req.body;
+
+    if (!name || !price) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing fields ❌",
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO products(name, price, seller_id, image)
+       VALUES($1,$2,$3,$4) RETURNING *`,
+      [name, price, req.user.id, req.file?.filename]
+    );
+
+    res.json({
+      success: true,
+      product: result.rows[0],
+    });
+
+  } catch (err) {
+    console.error("ADD PRODUCT ERROR ❌", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+// 🔥 UPDATE PRODUCT (مهم: فقط صاحب المنتج)
+app.put("/products/:id", auth, async (req, res) => {
+  try {
+    const { name, price } = req.body;
+
+    const result = await pool.query(
+      `UPDATE products 
+       SET name=$1, price=$2 
+       WHERE id=$3 AND seller_id=$4
+       RETURNING *`,
+      [name, price, req.params.id, req.user.id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(403).json({
+        success: false,
+        error: "Not allowed ❌",
+      });
+    }
+
+    res.json({
+      success: true,
+      product: result.rows[0],
+    });
+
+  } catch (err) {
+    console.error("UPDATE ERROR ❌", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+// 🔥 DELETE PRODUCT (فقط المالك)
+app.delete("/products/:id", auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "DELETE FROM products WHERE id=$1 AND seller_id=$2",
+      [req.params.id, req.user.id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(403).json({
+        success: false,
+        error: "Not allowed ❌",
+      });
+    }
+
+    res.json({
+      success: true,
+    });
+
+  } catch (err) {
+    console.error("DELETE ERROR ❌", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 // ================= SELLER PROFILE =================
 app.get("/seller/:id", async (req, res) => {
   const id = req.params.id;
