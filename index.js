@@ -262,6 +262,7 @@ app.get("/profile", auth, async (req, res) => {
   }
 });
 
+
 // ================= PRODUCTS =================
 
 // 🔥 GET ALL PRODUCTS (لكل المستخدمين - الصفحة الرئيسية)
@@ -388,20 +389,26 @@ app.delete("/products/:id", auth, async (req, res) => {
 app.get("/seller/:id", async (req, res) => {
   const id = req.params.id;
 
-  const user = await pool.query(
-    "SELECT id, name, email, image FROM users WHERE id=$1",
-    [id]
-  );
+  try {
+    const user = await pool.query(
+      "SELECT id, name, email, image FROM users WHERE id=$1",
+      [id]
+    );
 
-  const products = await pool.query(
-    "SELECT COUNT(*) FROM products WHERE seller_id=$1",
-    [id]
-  );
+    const products = await pool.query(
+      "SELECT * FROM products WHERE seller_id=$1",
+      [id]
+    );
 
-  res.json({
-    user: user.rows[0],
-    productsCount: products.rows[0].count
-  });
+    res.json({
+      seller: user.rows[0],   // 👈 مهم (اسم key)
+      products: products.rows
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 // ================= BECOME SELLER =================
 app.put("/become-seller", auth, async (req, res) => {
