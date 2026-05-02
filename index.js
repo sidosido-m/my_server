@@ -213,21 +213,27 @@ app.post("/login", async (req, res) => {
   }
 });
 // ================= PROFILE =================
-app.put("/profile", auth, async (req, res) => {
+app.put("/profile", auth, upload.single("image"), async (req, res) => {
   try {
     const { name, email, password } = req.body;
+
+    let image = null;
+
+    if (req.file) {
+      image = req.file.filename;
+    }
 
     if (password) {
       const hash = await bcrypt.hash(password, 10);
 
       await pool.query(
-        "UPDATE users SET name=$1,email=$2,password=$3 WHERE id=$4",
-        [name, email, hash, req.user.id]
+        "UPDATE users SET name=$1,email=$2,password=$3,image=COALESCE($4,image) WHERE id=$5",
+        [name, email, hash, image, req.user.id]
       );
     } else {
       await pool.query(
-        "UPDATE users SET name=$1,email=$2 WHERE id=$3",
-        [name, email, req.user.id]
+        "UPDATE users SET name=$1,email=$2,image=COALESCE($3,image) WHERE id=$4",
+        [name, email, image, req.user.id]
       );
     }
 
@@ -238,6 +244,7 @@ app.put("/profile", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 app.get("/profile", auth, async (req, res) => {
@@ -400,15 +407,87 @@ app.get("/seller/:id", async (req, res) => {
       [id]
     );
 
+    const followers = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE seller_id=$1",
+      [id]
+    );
+
+    const rating = await pool.query(
+      "SELECT AVG(rating) FROM reviews WHERE seller_id=$1",
+      [id]
+    );
+
     res.json({
-      seller: user.rows[0],   // 👈 مهم (اسم key)
-      products: products.rows
+      seller: user.rows[0],
+      products: products.rows,
+      followers: followers.rows[0].count,
+      rating: rating.rows[0].avg || 0
     });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Server error" });
   }
+});
+//-----------FOLLOW----------------
+app.post("/follow/:sellerId", auth, async (req, res) => {
+  const sellerId = req.params.sellerId;
+
+  const exists = await pool.query(
+    "SELECT * FROM followers WHERE user_id=$1 AND seller_id=$2",
+    [req.user.id, sellerId]
+  );
+
+  if (exists.rows.length > 0) {
+    await pool.query(
+      "DELETE FROM followers WHERE user_id=$1 AND seller_id=$2",
+      [req.user.id, sellerId]
+    );
+
+    return res.json({ following: false });
+  }
+
+  await pool.query(
+    "INSERT INTO followers(user_id,seller_id) VALUES($1,$2)",
+    [req.user.id, sellerId]
+  );
+
+  res.json({ following: true });
+});
+
+//-----------REVIEW----------------
+app.post("/review/:sellerId", auth, async (req, res) => {
+  const { rating, comment } = req.body;
+
+  await pool.query(
+    "INSERT INTO reviews(user_id,seller_id,rating,comment) VALUES($1,$2,$3,$4)",
+    [req.user.id, req.params.sellerId, rating, comment]
+  );
+
+  res.json({ success: true });
+});
+
+//-----------DASHBOARD----------------
+app.get("/seller-dashboard", auth, async (req, res) => {
+  const id = req.user.id;
+
+  const products = await pool.query(
+    "SELECT COUNT(*) FROM products WHERE seller_id=$1",
+    [id]
+  );
+
+  const orders = await pool.query(
+    `SELECT COUNT(*) FROM orders o
+     JOIN cart c ON c.user_id=o.user_id
+     JOIN products p ON p.id=c.product_id
+     WHERE p.seller_id=$1`,
+    [id]
+  );
+
+  res.json({
+  user: user.rows[0], // فيه role
+  latestProducts: products.rows,
+  productsCount: products.rows.length
+});
 });
 // ================= BECOME SELLER =================
 app.put("/become-seller", auth, async (req, res) => {
