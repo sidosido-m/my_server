@@ -56,50 +56,38 @@ app.post("/register", async (req, res) => {
   try {
     const { name, username, email, password, role } = req.body;
 
+    // 🔴 تحقق من وجود المستخدم
+    const exists = await pool.query(
+      "SELECT * FROM users WHERE email=$1",
+      [email]
+    );
+
+    if (exists.rows.length > 0) {
+      return res.json({
+        success: false,
+        error: "Email already exists ❌",
+      });
+    }
+
     const hash = await bcrypt.hash(password, 10);
 
     const otp = Math.floor(100000 + Math.random() * 900000);
-    const otpExpire = new Date(Date.now() + 60 * 1000); // 1 min
+    const otpExpire = new Date(Date.now() + 60 * 1000);
 
     await pool.query(
       `INSERT INTO users (name, username, email, password, role, otp, otp_expire, is_verified)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING email`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [name, username, email, hash, role, otp, otpExpire, false]
     );
 
     console.log("OTP:", otp);
 
-    // ================= EMAIL OTP =================
-    try {
-      await transporter.sendMail({
-        from: `"Marketplace" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "🔐 Verify your account",
-        html: `
-          <div style="font-family: Arial; max-width: 500px; margin: auto; padding: 20px;">
-            <h2>Marketplace 🛒</h2>
-            <p>Hello 👋,</p>
-            <p>Your OTP code is:</p>
+    // 🔥 لا نستخدم إيميل (تطوير فقط)
 
-            <div style="text-align:center; margin:20px 0;">
-              <h1 style="color:purple; letter-spacing:5px;">${otp}</h1>
-            </div>
-
-            <p>This code will expire in 1 minute ⏳</p>
-          </div>
-        `,
-      });
-
-      console.log("EMAIL SENT ✅");
-    } catch (err) {
-      console.log("EMAIL ERROR ❌", err.message);
-    }
-
-    // IMPORTANT: always return response
     return res.json({
       success: true,
       email,
+      otp, // 👈 مهم جدا
     });
 
   } catch (err) {
@@ -136,10 +124,10 @@ app.post("/verify-otp", async (req, res) => {
       [email]
     );
 
-    res.json({ success: true });
+    return res.json({ success: true });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 // ================= RESEND OTP =================
@@ -164,32 +152,10 @@ app.post("/resend-otp", async (req, res) => {
 
     console.log("NEW OTP:", otp);
 
-    // ================= EMAIL =================
-    try {
-      await transporter.sendMail({
-        from: `"Marketplace" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "🔐 New OTP Code",
-        html: `
-          <div style="font-family: Arial; max-width: 500px; margin: auto;">
-            <h2>Marketplace 🛒</h2>
-            <p>Your new OTP code is:</p>
-
-            <div style="text-align:center; margin:20px 0;">
-              <h1 style="color:purple;">${otp}</h1>
-            </div>
-
-            <p>Expires in 1 minute ⏳</p>
-          </div>
-        `,
-      });
-
-      console.log("RESEND EMAIL SENT ✅");
-    } catch (err) {
-      console.log("RESEND EMAIL ERROR ❌", err.message);
-    }
-
-    return res.json({ success: true });
+    return res.json({
+      success: true,
+      otp, // 👈 مهم
+    });
 
   } catch (err) {
     console.log("RESEND ERROR ❌", err.message);
