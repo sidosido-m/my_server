@@ -213,14 +213,13 @@ app.post("/login", async (req, res) => {
   }
 });
 // ================= PROFILE =================
-app.put("/profile", auth, upload.single("image"), async (req, res) => {
+app.put("/profile", auth, async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    let { name, email, password, image } = req.body;
 
-    let image = null;
-
-    if (req.file) {
-      image = req.file.filename;
+    // 🔥 حل المشكلة
+    if (image === undefined || image === "") {
+      image = null;
     }
 
     if (password) {
@@ -240,12 +239,10 @@ app.put("/profile", auth, upload.single("image"), async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error("PROFILE ERROR ❌", err);
+    console.error("PROFILE ERROR ❌", err); // 👈 مهم تشوف الخطأ
     res.status(500).json({ error: err.message });
   }
 });
-
-
 
 app.get("/profile", auth, async (req, res) => {
   try {
