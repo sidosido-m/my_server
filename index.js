@@ -8,7 +8,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const fs = require("fs");
 const bcrypt = require("bcrypt");
-const transporter = require("./config/mail");
+
 
 const auth = require("./middleware/auth");
 
@@ -465,26 +465,37 @@ app.post("/review/:sellerId", auth, async (req, res) => {
 
 //-----------DASHBOARD----------------
 app.get("/seller-dashboard", auth, async (req, res) => {
-  const id = req.user.id;
+  try {
+    const id = req.user.id;
 
-  const products = await pool.query(
-    "SELECT COUNT(*) FROM products WHERE seller_id=$1",
-    [id]
-  );
+    // 🔥 user info
+    const user = await pool.query(
+      "SELECT id, name, email, role, image FROM users WHERE id=$1",
+      [id]
+    );
 
-  const orders = await pool.query(
-    `SELECT COUNT(*) FROM orders o
-     JOIN cart c ON c.user_id=o.user_id
-     JOIN products p ON p.id=c.product_id
-     WHERE p.seller_id=$1`,
-    [id]
-  );
+    // 🔥 count products
+    const productsCount = await pool.query(
+      "SELECT COUNT(*) FROM products WHERE seller_id=$1",
+      [id]
+    );
 
-  res.json({
-  user: user.rows[0], // فيه role
-  latestProducts: products.rows,
-  productsCount: products.rows.length
-});
+    // 🔥 latest products
+    const latestProducts = await pool.query(
+      "SELECT * FROM products WHERE seller_id=$1 ORDER BY id DESC LIMIT 5",
+      [id]
+    );
+
+    res.json({
+      user: user.rows[0],
+      latestProducts: latestProducts.rows,
+      productsCount: productsCount.rows[0].count
+    });
+
+  } catch (err) {
+    console.error("DASHBOARD ERROR ❌", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 // ================= BECOME SELLER =================
 app.put("/become-seller", auth, async (req, res) => {
