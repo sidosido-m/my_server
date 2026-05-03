@@ -465,36 +465,32 @@ app.post("/review/:sellerId", auth, async (req, res) => {
 
 //-----------DASHBOARD----------------
 app.get("/seller-dashboard", auth, async (req, res) => {
+  const id = req.user.id;
+
   try {
-    const id = req.user.id;
-
-    // 🔥 user info
     const user = await pool.query(
-      "SELECT id, name, email, role, image FROM users WHERE id=$1",
+      "SELECT id, name, role FROM users WHERE id=$1",
       [id]
     );
 
-    // 🔥 count products
-    const productsCount = await pool.query(
-      "SELECT COUNT(*) FROM products WHERE seller_id=$1",
-      [id]
-    );
-
-    // 🔥 latest products
-    const latestProducts = await pool.query(
+    const products = await pool.query(
       "SELECT * FROM products WHERE seller_id=$1 ORDER BY id DESC LIMIT 5",
+      [id]
+    );
+
+    const count = await pool.query(
+      "SELECT COUNT(*) FROM products WHERE seller_id=$1",
       [id]
     );
 
     res.json({
       user: user.rows[0],
-      latestProducts: latestProducts.rows,
-      productsCount: productsCount.rows[0].count
+      latestProducts: products.rows,
+      productsCount: count.rows[0].count
     });
 
   } catch (err) {
-    console.error("DASHBOARD ERROR ❌", err);
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 // ================= BECOME SELLER =================
