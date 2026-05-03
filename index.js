@@ -451,14 +451,38 @@ app.post("/follow/:sellerId", auth, async (req, res) => {
   res.json({ following: true });
 });
 
+//-----------Followers----------------
+app.get("/followers/:sellerId", async (req, res) => {
+  const data = await pool.query(
+    `SELECT u.id, u.name, u.image
+     FROM followers f
+     JOIN users u ON u.id = f.user_id
+     WHERE f.seller_id=$1`,
+    [req.params.sellerId]
+  );
+
+  res.json(data.rows);
+});
 //-----------REVIEW----------------
 app.post("/review/:sellerId", auth, async (req, res) => {
-  const { rating, comment } = req.body;
+  const { rating } = req.body;
 
-  await pool.query(
-    "INSERT INTO reviews(user_id,seller_id,rating,comment) VALUES($1,$2,$3,$4)",
-    [req.user.id, req.params.sellerId, rating, comment]
+  const exists = await pool.query(
+    "SELECT * FROM reviews WHERE user_id=$1 AND seller_id=$2",
+    [req.user.id, req.params.sellerId]
   );
+
+  if (exists.rows.length > 0) {
+    await pool.query(
+      "UPDATE reviews SET rating=$1 WHERE user_id=$2 AND seller_id=$3",
+      [rating, req.user.id, req.params.sellerId]
+    );
+  } else {
+    await pool.query(
+      "INSERT INTO reviews(user_id,seller_id,rating) VALUES($1,$2,$3)",
+      [req.user.id, req.params.sellerId, rating]
+    );
+  }
 
   res.json({ success: true });
 });
@@ -508,28 +532,85 @@ app.put("/become-seller", auth, async (req, res) => {
 });
 // ================= CART =================
 app.post("/cart", auth, async (req, res) => {
-  const { product_id, quantity } = req.body;
+  const { productId, qty } = req.body;
 
   const exists = await pool.query(
     "SELECT * FROM cart WHERE user_id=$1 AND product_id=$2",
-    [req.user.id, product_id]
+    [req.user.id, productId]
   );
 
   if (exists.rows.length > 0) {
     await pool.query(
       "UPDATE cart SET quantity = quantity + 1 WHERE user_id=$1 AND product_id=$2",
-      [req.user.id, product_id]
+      [req.user.id, productId]
     );
   } else {
     await pool.query(
       "INSERT INTO cart(user_id,product_id,quantity) VALUES($1,$2,$3)",
-      [req.user.id, product_id, quantity]
+      [req.user.id, productId, qty || 1]
     );
   }
 
   res.json({ success: true });
 });
 
+app.get("/cart", auth, async (req, res) => {
+  const data = await pool.query(
+    `SELECT c.id, c.quantity as qty, p.name, p.price, p.image
+     FROM cart c
+     JOIN products p ON p.id = c.product_id
+     WHERE c.user_id=$1`,
+    [req.user.id]
+  );
+
+  res.json(data.rows);
+});
+
+app.delete("/cart/:id", auth, async (req, res) => {
+  await pool.query(
+    "DELETE FROM cart WHERE id=$1 AND user_id=$2",
+    [req.params.id, req.user.id]
+  );
+
+  res.json({ success: true });
+});
+
+app.put("/cart/:id", auth, async (req, res) => {
+  const { qty } = req.body;
+
+  await pool.query(
+    "UPDATE cart SET quantity=$1 WHERE id=$2 AND user_id=$3",
+    [qty, req.params.id, req.user.id]
+  );
+
+  res.json({ success: true });
+});
+
+// ================= LIKE SYSTEM =================
+
+app.post("/like/:productId", auth, async (req, res) => {
+  const productId = req.params.productId;
+
+  const exists = await pool.query(
+    "SELECT * FROM likes WHERE user_id=$1 AND product_id=$2",
+    [req.user.id, productId]
+  );
+
+  if (exists.rows.length > 0) {
+    await pool.query(
+      "DELETE FROM likes WHERE user_id=$1 AND product_id=$2",
+      [req.user.id, productId]
+    );
+    return res.json({ liked: false });
+  }
+
+  await pool.query(
+    "INSERT INTO likes(user_id, product_id) VALUES($1,$2)",
+    [req.user.id, productId]
+  );
+
+  res.json({ liked: true });
+});
 // ================= CHECKOUT =================
 app.post("/checkout", auth, async (req, res) => {
   const cart = await pool.query(
