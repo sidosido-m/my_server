@@ -215,11 +215,11 @@ app.post("/login", async (req, res) => {
 // ================= PROFILE =================
 app.put("/profile", auth, async (req, res) => {
   try {
-    let { name, email, password, image, cover_image } = req.body;
+    let { name, email, password, image, background_image } = req.body;
 
     // تنظيف القيم
     if (!image || image === "") image = null;
-    if (!cover_image || cover_image === "") cover_image = null;
+    if (!background_image|| background_image === "") background_image = null;
 
     if (password) {
       const hash = await bcrypt.hash(password, 10);
@@ -229,8 +229,8 @@ app.put("/profile", auth, async (req, res) => {
          SET name=$1,
              email=$2,
              password=$3,
-             image=COALESCE($4,image),
-             cover_image=COALESCE($5,cover_image)
+             image=COALESCE($3,image),
+           background_image = COALESCE($4,background_image)
          WHERE id=$6`,
         [name, email, hash, image, cover_image, req.user.id]
       );
@@ -240,7 +240,7 @@ app.put("/profile", auth, async (req, res) => {
          SET name=$1,
              email=$2,
              image=COALESCE($3,image),
-             cover_image=COALESCE($4,cover_image)
+            background_image=COALESCE($4,cover_image)
          WHERE id=$5`,
         [name, email, image, cover_image, req.user.id]
       );
@@ -257,7 +257,7 @@ app.put("/profile", auth, async (req, res) => {
 app.get("/profile", auth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, username, email, image, cover_image, role
+      `SELECT id, name, username, email, image, background_image, role
        FROM users WHERE id=$1`,
       [req.user.id]
     );
