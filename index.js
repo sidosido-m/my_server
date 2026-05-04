@@ -178,7 +178,7 @@ app.post("/login", async (req, res) => {
 
     const user = result.rows[0];
 
-    // 1️⃣ check password
+    // ========== check password=============
     const ok = await bcrypt.compare(password, user.password);
 
     if (!ok) {
@@ -194,7 +194,7 @@ app.post("/login", async (req, res) => {
       });
     }
 
-    // 3️⃣ create token
+    // ======= create token============
     const token = jwt.sign(
       { id: user.id, role: user.role },
       process.env.JWT_SECRET,
@@ -284,7 +284,7 @@ app.put("/profile", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
+//==============GET PTOFILE ============
 app.get("/profile", auth, async (req, res) => {
   try {
     const result = await pool.query(
@@ -697,20 +697,32 @@ app.post("/like/:productId", auth, async (req, res) => {
     [req.user.id, productId]
   );
 
+  let liked = false;
+
   if (exists.rows.length > 0) {
     await pool.query(
       "DELETE FROM likes WHERE user_id=$1 AND product_id=$2",
       [req.user.id, productId]
     );
-    return res.json({ liked: false });
+    liked = false;
+  } else {
+    await pool.query(
+      "INSERT INTO likes(user_id, product_id) VALUES($1,$2)",
+      [req.user.id, productId]
+    );
+    liked = true;
   }
 
-  await pool.query(
-    "INSERT INTO likes(user_id, product_id) VALUES($1,$2)",
-    [req.user.id, productId]
+  // 🔥 نحسب عدد اللايكات بعد التحديث
+  const countRes = await pool.query(
+    "SELECT COUNT(*) FROM likes WHERE product_id=$1",
+    [productId]
   );
 
-  res.json({ liked: true });
+  res.json({
+    liked: liked,
+    likes_count: parseInt(countRes.rows[0].count),
+  });
 });
 // ================= CHECKOUT =================
 app.post("/checkout", auth, async (req, res) => {
