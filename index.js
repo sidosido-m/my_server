@@ -215,31 +215,41 @@ app.post("/login", async (req, res) => {
 // ================= PROFILE =================
 app.put("/profile", auth, async (req, res) => {
   try {
-    let { name, email, password, image } = req.body;
+    let { name, email, password, image, cover_image } = req.body;
 
-    // 🔥 حل المشكلة
-    if (image === undefined || image === "") {
-      image = null;
-    }
+    // تنظيف القيم
+    if (!image || image === "") image = null;
+    if (!cover_image || cover_image === "") cover_image = null;
 
     if (password) {
       const hash = await bcrypt.hash(password, 10);
 
       await pool.query(
-        "UPDATE users SET name=$1,email=$2,password=$3,image=COALESCE($4,image) WHERE id=$5",
-        [name, email, hash, image, req.user.id]
+        `UPDATE users 
+         SET name=$1,
+             email=$2,
+             password=$3,
+             image=COALESCE($4,image),
+             cover_image=COALESCE($5,cover_image)
+         WHERE id=$6`,
+        [name, email, hash, image, cover_image, req.user.id]
       );
     } else {
       await pool.query(
-        "UPDATE users SET name=$1,email=$2,image=COALESCE($3,image) WHERE id=$4",
-        [name, email, image, req.user.id]
+        `UPDATE users 
+         SET name=$1,
+             email=$2,
+             image=COALESCE($3,image),
+             cover_image=COALESCE($4,cover_image)
+         WHERE id=$5`,
+        [name, email, image, cover_image, req.user.id]
       );
     }
 
     res.json({ success: true });
 
   } catch (err) {
-    console.error("PROFILE ERROR ❌", err); // 👈 مهم تشوف الخطأ
+    console.error("PROFILE ERROR ❌", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -247,21 +257,32 @@ app.put("/profile", auth, async (req, res) => {
 app.get("/profile", auth, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, name, email, image FROM users WHERE id=$1",
+      `SELECT id, name, username, email, image, cover_image, role
+       FROM users WHERE id=$1`,
       [req.user.id]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    const user = result.rows[0];
+
+    const followers = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE seller_id=$1",
+      [req.user.id]
+    );
+
+    const following = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE user_id=$1",
+      [req.user.id]
+    );
 
     res.json({
-  success: true,
-  user: result.rows[0]
-});
+      user,
+      stats: {
+        followers: followers.rows[0].count,
+        following: following.rows[0].count,
+      },
+    });
 
   } catch (err) {
-    console.error("GET PROFILE ERROR ❌", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -304,21 +325,14 @@ app.get("/my-products", auth, async (req, res) => {
 
 
 // 🔥 ADD PRODUCT
-app.post("/products", auth, upload.single("image"), async (req, res) => {
+app.post("/products", auth, async (req, res) => {
   try {
-    const { name, price } = req.body;
-
-    if (!name || !price) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing fields ❌",
-      });
-    }
+    const { name, price, image } = req.body;
 
     const result = await pool.query(
       `INSERT INTO products(name, price, seller_id, image)
        VALUES($1,$2,$3,$4) RETURNING *`,
-      [name, price, req.user.id, req.file?.filename]
+      [name, price, req.user.id, image] // 🔥 رابط Supabase
     );
 
     res.json({
@@ -327,7 +341,7 @@ app.post("/products", auth, upload.single("image"), async (req, res) => {
     });
 
   } catch (err) {
-    console.error("ADD PRODUCT ERROR ❌", err);
+    console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -336,15 +350,15 @@ app.post("/products", auth, upload.single("image"), async (req, res) => {
 // 🔥 UPDATE PRODUCT (مهم: فقط صاحب المنتج)
 app.put("/products/:id", auth, async (req, res) => {
   try {
-    const { name, price } = req.body;
+    const { name, price, image } = req.body;
 
-    const result = await pool.query(
-      `UPDATE products 
-       SET name=$1, price=$2 
-       WHERE id=$3 AND seller_id=$4
-       RETURNING *`,
-      [name, price, req.params.id, req.user.id]
-    );
+const result = await pool.query(
+  `UPDATE products 
+   SET name=$1, price=$2, image=COALESCE($3, image)
+   WHERE id=$4 AND seller_id=$5
+   RETURNING *`,
+  [name, price, image, req.params.id, req.user.id]
+);
 
     if (result.rowCount === 0) {
       return res.status(403).json({
@@ -395,12 +409,13 @@ app.get("/seller/:id", async (req, res) => {
 
   try {
     const user = await pool.query(
-      "SELECT id, name, email, image FROM users WHERE id=$1",
+      `SELECT id, name, username, email, image, background_image
+       FROM users WHERE id=$1`,
       [id]
     );
 
     const products = await pool.query(
-      "SELECT * FROM products WHERE seller_id=$1",
+      "SELECT * FROM products WHERE seller_id=$1 ORDER BY id DESC",
       [id]
     );
 
@@ -409,8 +424,13 @@ app.get("/seller/:id", async (req, res) => {
       [id]
     );
 
+    const following = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE user_id=$1",
+      [id]
+    );
+
     const rating = await pool.query(
-      "SELECT AVG(rating) FROM reviews WHERE seller_id=$1",
+      "SELECT COALESCE(AVG(rating),0) FROM reviews WHERE seller_id=$1",
       [id]
     );
 
@@ -418,11 +438,12 @@ app.get("/seller/:id", async (req, res) => {
       seller: user.rows[0],
       products: products.rows,
       followers: followers.rows[0].count,
-      rating: rating.rows[0].avg || 0
+      following: following.rows[0].count,
+      rating: rating.rows[0].coalesce
     });
 
   } catch (err) {
-    res.status(500).json({ error: "Server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 //-----------FOLLOW----------------
@@ -444,7 +465,7 @@ app.post("/follow/:sellerId", auth, async (req, res) => {
   }
 
   await pool.query(
-    "INSERT INTO followers(user_id,seller_id) VALUES($1,$2)",
+    "INSERT INTO followers(user_id, seller_id) VALUES($1,$2)",
     [req.user.id, sellerId]
   );
 
@@ -453,15 +474,35 @@ app.post("/follow/:sellerId", auth, async (req, res) => {
 
 //-----------Followers----------------
 app.get("/followers/:sellerId", async (req, res) => {
-  const data = await pool.query(
-    `SELECT u.id, u.name, u.image
-     FROM followers f
-     JOIN users u ON u.id = f.user_id
-     WHERE f.seller_id=$1`,
-    [req.params.sellerId]
-  );
+  try {
+    const data = await pool.query(
+      `SELECT u.id, u.name, u.image
+       FROM followers f
+       JOIN users u ON u.id = f.user_id
+       WHERE f.seller_id=$1`,
+      [req.params.sellerId]
+    );
 
-  res.json(data.rows);
+    res.json(data.rows);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get("/following/:userId", async (req, res) => {
+  try {
+    const data = await pool.query(
+      `SELECT u.id, u.name, u.username, u.image
+       FROM followers f
+       JOIN users u ON u.id = f.seller_id
+       WHERE f.user_id=$1`,
+      [req.params.userId]
+    );
+
+    res.json(data.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 //-----------REVIEW----------------
 app.post("/review/:sellerId", auth, async (req, res) => {
