@@ -215,37 +215,70 @@ app.post("/login", async (req, res) => {
 // ================= PROFILE =================
 app.put("/profile", auth, async (req, res) => {
   try {
-    const { name, email, password, image, background_image } = req.body;
-
-    let hash = null;
-
-    if (password) {
-      hash = await bcrypt.hash(password, 10);
-    }
-
-    const query = `
-      UPDATE users
-      SET
-        name = $1,
-        email = $2,
-        password = COALESCE($3, password),
-        image = COALESCE($4, image),
-        background_image = COALESCE($5, background_image)
-      WHERE id = $6
-    `;
-
-    const values = [
+    const {
       name,
       email,
-      hash,
-      image || null,
-      background_image || null,
-      req.user.id,
-    ];
+      username,
+      oldPassword,
+      newPassword,
+      image,
+      background_image,
+    } = req.body;
 
-    await pool.query(query, values);
+    const user = await pool.query(
+      "SELECT * FROM users WHERE id=$1",
+      [req.user.id]
+    );
+
+    const currentUser = user.rows[0];
+
+    // ================= PASSWORD CHECK =================
+    let hashedPassword = currentUser.password;
+
+    if (newPassword) {
+      if (!oldPassword) {
+        return res.status(400).json({
+          error: "Old password required",
+        });
+      }
+
+      const valid = await bcrypt.compare(
+        oldPassword,
+        currentUser.password
+      );
+
+      if (!valid) {
+        return res.status(400).json({
+          error: "Wrong old password",
+        });
+      }
+
+      hashedPassword = await bcrypt.hash(newPassword, 10);
+    }
+
+    // ================= UPDATE =================
+    await pool.query(
+  `UPDATE users SET
+    name=$1,
+    email=$2,
+    username=$3,
+    password=$4,
+    image = CASE WHEN $5 IS NULL OR $5 = '' THEN image ELSE $5 END,
+    background_image = CASE WHEN $6 IS NULL OR $6 = '' THEN background_image ELSE $6 END
+   WHERE id=$7`,
+  [
+    name,
+    email,
+    username,
+    hashedPassword,
+    image,
+    background_image,
+    req.user.id,
+  ]
+);
 
     res.json({ success: true });
+
   } catch (err) {
     console.error("PROFILE ERROR ❌", err);
     res.status(500).json({ error: err.message });
@@ -502,6 +535,35 @@ app.get("/following/:userId", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+//-----------/seller-stats/:sellerId----------------
+app.get("/seller-stats/:sellerId", async (req, res) => {
+  try {
+    const followers = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE seller_id=$1",
+      [req.params.sellerId]
+    );
+
+    const following = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE user_id=$1",
+      [req.params.sellerId]
+    );
+
+    const rating = await pool.query(
+      "SELECT COALESCE(AVG(rating),0) as avg FROM reviews WHERE seller_id=$1",
+      [req.params.sellerId]
+    );
+
+    res.json({
+      followers: followers.rows[0].count,
+      following: following.rows[0].count,
+      rating: rating.rows[0].avg,
+    });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 //-----------REVIEW----------------
 app.post("/review/:sellerId", auth, async (req, res) => {
   const { rating } = req.body;
