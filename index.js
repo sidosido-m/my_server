@@ -212,61 +212,77 @@ app.post("/login", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+// ================= PROFILE =================
 app.put("/profile", auth, async (req, res) => {
   try {
     let { name, email, password, image, background_image } = req.body;
 
+    // تنظيف القيم
     if (!image || image === "") image = null;
-    if (!background_image || background_image === "") background_image = null;
-
-    let query;
-    let params;
+    if (!background_image|| background_image === "") background_image = null;
 
     if (password) {
       const hash = await bcrypt.hash(password, 10);
 
-      query = `
-        UPDATE users 
-        SET name=$1,
-            email=$2,
-            password=$3,
-            image=COALESCE($4, image),
-            background_image=COALESCE($5, background_image)
-        WHERE id=$6
-      `;
-
-      params = [
-        name,
-        email,
-        hash,
-        image,
-        background_image,
-        req.user.id,
-      ];
+      await pool.query(
+        `UPDATE users 
+         SET name=$1,
+             email=$2,
+             password=$3,
+             image=COALESCE($3,image),
+           background_image = COALESCE($4,background_image)
+         WHERE id=$6`,
+        [name, email, hash, image, cover_image, req.user.id]
+      );
     } else {
-      query = `
-        UPDATE users 
-        SET name=$1,
-            email=$2,
-            image=COALESCE($3, image),
-            background_image=COALESCE($4, background_image)
-        WHERE id=$5
-      `;
-
-      params = [
-        name,
-        email,
-        image,
-        background_image,
-        req.user.id,
-      ];
+      await pool.query(
+        `UPDATE users 
+         SET name=$1,
+             email=$2,
+             image=COALESCE($3,image),
+            background_image=COALESCE($4,cover_image)
+         WHERE id=$5`,
+        [name, email, image, cover_image, req.user.id]
+      );
     }
 
-    await pool.query(query, params);
-
     res.json({ success: true });
+
   } catch (err) {
     console.error("PROFILE ERROR ❌", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/profile", auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, username, email, image, background_image, role
+       FROM users WHERE id=$1`,
+      [req.user.id]
+    );
+
+    const user = result.rows[0];
+
+    const followers = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE seller_id=$1",
+      [req.user.id]
+    );
+
+    const following = await pool.query(
+      "SELECT COUNT(*) FROM followers WHERE user_id=$1",
+      [req.user.id]
+    );
+
+    res.json({
+      user,
+      stats: {
+        followers: followers.rows[0].count,
+        following: following.rows[0].count,
+      },
+    });
+
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
