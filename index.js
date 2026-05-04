@@ -215,39 +215,37 @@ app.post("/login", async (req, res) => {
 // ================= PROFILE =================
 app.put("/profile", auth, async (req, res) => {
   try {
-    let { name, email, password, image, background_image } = req.body;
+    const { name, email, password, image, background_image } = req.body;
 
-    // تنظيف القيم
-    if (!image || image === "") image = null;
-    if (!background_image|| background_image === "") background_image = null;
+    let hash = null;
 
     if (password) {
-      const hash = await bcrypt.hash(password, 10);
-
-      await pool.query(
-        `UPDATE users 
-         SET name=$1,
-             email=$2,
-             password=$3,
-             image=COALESCE($3,image),
-           background_image = COALESCE($4,background_image)
-         WHERE id=$6`,
-        [name, email, hash, image, cover_image, req.user.id]
-      );
-    } else {
-      await pool.query(
-        `UPDATE users 
-         SET name=$1,
-             email=$2,
-             image=COALESCE($3,image),
-            background_image=COALESCE($4,cover_image)
-         WHERE id=$5`,
-        [name, email, image, cover_image, req.user.id]
-      );
+      hash = await bcrypt.hash(password, 10);
     }
 
-    res.json({ success: true });
+    const query = `
+      UPDATE users
+      SET
+        name = $1,
+        email = $2,
+        password = COALESCE($3, password),
+        image = COALESCE($4, image),
+        background_image = COALESCE($5, background_image)
+      WHERE id = $6
+    `;
 
+    const values = [
+      name,
+      email,
+      hash,
+      image || null,
+      background_image || null,
+      req.user.id,
+    ];
+
+    await pool.query(query, values);
+
+    res.json({ success: true });
   } catch (err) {
     console.error("PROFILE ERROR ❌", err);
     res.status(500).json({ error: err.message });
