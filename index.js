@@ -258,7 +258,7 @@ app.put("/profile", auth, async (req, res) => {
   username=$3,
   password=$4,
   image = COALESCE(NULLIF($5::text, ''), image),
-  background_image = COALESCE(NULLIF($6::text, ''), background_image)
+  background_image = COALESCE(NULLIF($5::text, ''), background_image)
 WHERE id=$7
 RETURNING id, name, email, username, image, background_image;
       `,
