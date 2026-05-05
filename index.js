@@ -244,25 +244,29 @@ app.put("/profile", auth, async (req, res) => {
       hashedPassword = await bcrypt.hash(newPassword, 10);
     }
 
+    console.log("IMAGE:", image);
+console.log("BG:", background_image);
+
     await pool.query(
-      `UPDATE users SET 
-        name=$1,
-        email=$2,
-        username=$3,
-        password=$4,
-        image=$5,
-        background_image=$6
-       WHERE id=$7`,
-      [
-        name,
-        email,
-        username,
-        hashedPassword,
-        image ?? currentUser.image,
-        background_image ?? currentUser.background_image,
-        req.user.id,
-      ]
-    );
+  `UPDATE users SET 
+    name=$1,
+    email=$2,
+    username=$3,
+    password=$4,
+    image = COALESCE($5, currentUser.image),
+background_image = COALESCE($6, currentUser.background_image)
+   WHERE id=$7`,
+  [
+    name,
+    email,
+    username,
+    hashedPassword,
+    image,
+    background_image,
+    req.user.id,
+  ]
+);
+
 
     res.json({ success: true });
 
