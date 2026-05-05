@@ -697,31 +697,26 @@ app.post("/like/:productId", auth, async (req, res) => {
     [req.user.id, productId]
   );
 
-  let liked = false;
-
   if (exists.rows.length > 0) {
     await pool.query(
       "DELETE FROM likes WHERE user_id=$1 AND product_id=$2",
       [req.user.id, productId]
     );
-    liked = false;
   } else {
     await pool.query(
       "INSERT INTO likes(user_id, product_id) VALUES($1,$2)",
       [req.user.id, productId]
     );
-    liked = true;
   }
 
-  // 🔥 نحسب عدد اللايكات بعد التحديث
-  const countRes = await pool.query(
+  const count = await pool.query(
     "SELECT COUNT(*) FROM likes WHERE product_id=$1",
     [productId]
   );
 
   res.json({
-    liked: liked,
-    likes_count: parseInt(countRes.rows[0].count),
+    liked: exists.rows.length == 0,
+    likes_count: int.parse(count.rows[0].count)
   });
 });
 // ================= CHECKOUT =================
