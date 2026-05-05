@@ -225,21 +225,16 @@ app.put("/profile", auth, async (req, res) => {
       background_image,
     } = req.body;
 
-    const userResult = await pool.query(
+    const user = await pool.query(
       "SELECT * FROM users WHERE id=$1",
       [req.user.id]
     );
 
-    const currentUser = userResult.rows[0];
+    const currentUser = user.rows[0];
 
     let hashedPassword = currentUser.password;
 
-    // ================= PASSWORD =================
     if (newPassword) {
-      if (!oldPassword) {
-        return res.status(400).json({ error: "Old password required" });
-      }
-
       const valid = await bcrypt.compare(oldPassword, currentUser.password);
 
       if (!valid) {
@@ -249,34 +244,27 @@ app.put("/profile", auth, async (req, res) => {
       hashedPassword = await bcrypt.hash(newPassword, 10);
     }
 
-    // ================= UPDATE =================
-    const result = await pool.query(
-      `
-      UPDATE users SET
-  name=$1,
-  email=$2,
-  username=$3,
-  password=$4,
-  image = COALESCE(NULLIF($5::text, ''), image),
-  background_image = COALESCE(NULLIF($5::text, ''), background_image)
-WHERE id=$7
-RETURNING id, name, email, username, image, background_image;
-      `,
+    await pool.query(
+      `UPDATE users SET 
+        name=$1,
+        email=$2,
+        username=$3,
+        password=$4,
+        image=$5,
+        background_image=$6
+       WHERE id=$7`,
       [
         name,
         email,
         username,
         hashedPassword,
-        image,
-        background_image,
+        image ?? currentUser.image,
+        background_image ?? currentUser.background_image,
         req.user.id,
       ]
     );
 
-    res.json({
-      success: true,
-      user: result.rows[0],
-    });
+    res.json({ success: true });
 
   } catch (err) {
     console.error("PROFILE ERROR ❌", err);
