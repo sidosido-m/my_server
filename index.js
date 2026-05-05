@@ -225,59 +225,58 @@ app.put("/profile", auth, async (req, res) => {
       background_image,
     } = req.body;
 
-    const user = await pool.query(
+    const userResult = await pool.query(
       "SELECT * FROM users WHERE id=$1",
       [req.user.id]
     );
 
-    const currentUser = user.rows[0];
+    const currentUser = userResult.rows[0];
 
-    // ================= PASSWORD CHECK =================
     let hashedPassword = currentUser.password;
 
+    // ================= PASSWORD =================
     if (newPassword) {
       if (!oldPassword) {
-        return res.status(400).json({
-          error: "Old password required",
-        });
+        return res.status(400).json({ error: "Old password required" });
       }
 
-      const valid = await bcrypt.compare(
-        oldPassword,
-        currentUser.password
-      );
+      const valid = await bcrypt.compare(oldPassword, currentUser.password);
 
       if (!valid) {
-        return res.status(400).json({
-          error: "Wrong old password",
-        });
+        return res.status(400).json({ error: "Wrong old password" });
       }
 
       hashedPassword = await bcrypt.hash(newPassword, 10);
     }
 
     // ================= UPDATE =================
-    await pool.query(
-  `UPDATE users SET
-    name=$1,
-    email=$2,
-    username=$3,
-    password=$4,
-    image = CASE WHEN $5 IS NULL OR $5 = '' THEN image ELSE $5 END,
-    background_image = CASE WHEN $6 IS NULL OR $6 = '' THEN background_image ELSE $6 END
-   WHERE id=$7`,
-  [
-    name,
-    email,
-    username,
-    hashedPassword,
-    image,
-    background_image,
-    req.user.id,
-  ]
-);
+    const result = await pool.query(
+      `
+      UPDATE users SET
+  name=$1,
+  email=$2,
+  username=$3,
+  password=$4,
+  image = COALESCE(NULLIF($5::text, ''), image),
+  background_image = COALESCE(NULLIF($6::text, ''), background_image)
+WHERE id=$7
+RETURNING id, name, email, username, image, background_image;
+      `,
+      [
+        name,
+        email,
+        username,
+        hashedPassword,
+        image,
+        background_image,
+        req.user.id,
+      ]
+    );
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      user: result.rows[0],
+    });
 
   } catch (err) {
     console.error("PROFILE ERROR ❌", err);
