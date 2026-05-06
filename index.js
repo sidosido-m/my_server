@@ -15,7 +15,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-
+const baseUrl = process.env.BASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
 
 const uploadDir = path.join(__dirname, "uploads");
@@ -45,12 +45,22 @@ const storage = multer.diskStorage({
 });
 
 // ================= FILTER =================
-const fileFilter = (req, file, cb) => {
-  if (!file.mimetype.startsWith("image/")) {
-    return cb(new Error("Only images allowed ❌"), false);
+ fileFilter: (req, file, cb) => {
+  console.log("MIMETYPE:", file.mimetype);
+
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/jpg",
+    "application/octet-stream", // 🔥 مهم للهواتف
+  ];
+
+  if (!allowedTypes.includes(file.mimetype)) {
+    return cb(new Error("Only images allowed ❌"));
   }
+
   cb(null, true);
-};
+}
 
 // ================= MULTER =================
 const upload = multer({
@@ -70,12 +80,9 @@ app.use("/uploads", express.static(uploadDir));
     return res.status(400).json({ error: "No file uploaded" });
   }
 
-  const url = `${process.env.BASE_URL}/uploads/${req.file.filename}`;
+  const imageUrl = `${process.env.BASE_URL}/uploads/${req.file.filename}`;
 
-  res.json({
-    success: true,
-    url: url,
-  });
+  res.json({ url: imageUrl });
 });
 
 // ================= REGISTER =================
