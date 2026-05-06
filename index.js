@@ -7,11 +7,9 @@ const pool = require("./db");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const fs = require("fs");
+const path = require("path");
 const bcrypt = require("bcrypt");
-
-
 const auth = require("./middleware/auth");
-
 const app = express();
 
 app.use(cors());
@@ -20,6 +18,12 @@ app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+const uploadDir = path.join(__dirname, "uploads");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
+
 // ================= DB TEST =================
 pool.query("SELECT NOW()")
   .then(() => console.log("DB Connected ✅"))
@@ -27,29 +31,52 @@ pool.query("SELECT NOW()")
     console.error("DB Error ❌", err);
   });
 
-// ================= UPLOAD =================
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
-}
-
+// ================= STORAGE =================
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+
   filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+    const ext = path.extname(file.originalname);
+    const safeName = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, safeName + ext);
   },
 });
 
+// ================= FILTER =================
+const fileFilter = (req, file, cb) => {
+  if (!file.mimetype.startsWith("image/")) {
+    return cb(new Error("Only images allowed ❌"), false);
+  }
+  cb(null, true);
+};
+
+// ================= MULTER =================
 const upload = multer({
   storage,
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only images allowed"));
-    }
-    cb(null, true);
-  }
+  fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
 });
 
-app.use("/uploads", express.static("uploads"));
+// ================= STATIC ACCESS =================
+app.use("/uploads", express.static(uploadDir));
+
+// ================= upload =================
+  app.post("/upload", upload.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  const url = `${process.env.BASE_URL}/uploads/${req.file.filename}`;
+
+  res.json({
+    success: true,
+    url: url,
+  });
+});
 
 // ================= REGISTER =================
 app.post("/register", async (req, res) => {
@@ -707,7 +734,7 @@ app.post("/like/:productId", auth, async (req, res) => {
 
   res.json({
     liked: exists.rows.length == 0,
-    likes_count: int.parse(count.rows[0].count)
+    likes_count: parseInt(count.rows[0].count)
   });
 });
 // ================= CHECKOUT =================
