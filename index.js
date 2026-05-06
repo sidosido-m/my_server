@@ -11,6 +11,7 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const auth = require("./middleware/auth");
 const app = express();
+const cloudinary = require("cloudinary").v2;
 
 app.use(cors());
 app.use(express.json());
@@ -19,6 +20,12 @@ const baseUrl = process.env.BASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
 
 const uploadDir = path.join(__dirname, "uploads");
+
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.API_KEY,
+  api_secret: process.env.API_SECRET,
+});
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
@@ -46,13 +53,9 @@ const storage = multer.diskStorage({
 
 // ================= FILTER =================
  const fileFilter = (req, file, cb) => {
-  console.log("FILE:", file.originalname);
+  console.log("MIME:", file.mimetype);
 
-  const ext = path.extname(file.originalname).toLowerCase();
-
-  const allowedExt = [".jpg", ".jpeg", ".png", ".webp"];
-
-  if (!allowedExt.includes(ext)) {
+  if (!file.mimetype.startsWith("image/")) {
     return cb(new Error("Only images allowed ❌"));
   }
 
@@ -71,14 +74,31 @@ const upload = multer({
 app.use("/uploads", express.static(uploadDir));
 
 // ================= upload =================
-  app.post("/upload", upload.single("image"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" });
+  app.post("/upload", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // رفع الصورة إلى Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "my_app", // اسم فولدر في Cloudinary
+    });
+
+    // حذف الصورة من السيرفر المحلي (اختياري لكن مهم)
+    fs.unlinkSync(req.file.path);
+
+    // الرابط النهائي
+    const imageUrl = result.secure_url;
+
+    console.log("CLOUDINARY URL:", imageUrl);
+
+    res.json({ url: imageUrl });
+
+  } catch (err) {
+    console.error("UPLOAD ERROR ❌", err);
+    res.status(500).json({ error: err.message });
   }
-
-  const imageUrl = `${process.env.BASE_URL}/uploads/${req.file.filename}`;
-
-  res.json({ url: imageUrl });
 });
 
 // ================= REGISTER =================
