@@ -45,29 +45,25 @@ const storage = multer.diskStorage({
 });
 
 // ================= FILTER =================
- fileFilter: (req, file, cb) => {
-  console.log("MIMETYPE:", file.mimetype);
+ const fileFilter = (req, file, cb) => {
+  console.log("FILE:", file.originalname);
 
-  const allowedTypes = [
-    "image/jpeg",
-    "image/png",
-    "image/jpg",
-    "application/octet-stream", // 🔥 مهم للهواتف
-  ];
+  const ext = path.extname(file.originalname).toLowerCase();
 
-  if (!allowedTypes.includes(file.mimetype)) {
+  const allowedExt = [".jpg", ".jpeg", ".png", ".webp"];
+
+  if (!allowedExt.includes(ext)) {
     return cb(new Error("Only images allowed ❌"));
   }
 
   cb(null, true);
-}
-
+};
 // ================= MULTER =================
 const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB
+    fileSize: 5 * 1024 * 1024,
   },
 });
 
