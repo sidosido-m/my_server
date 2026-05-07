@@ -61,18 +61,24 @@ const storage = multer.diskStorage({
 });
 
 // ================= FILTER =================
- const fileFilter = (req, file, cb) => {
-  console.log("UPLOAD FILE TYPE:", file.mimetype);
+ const path = require("path");
 
+const fileFilter = (req, file, cb) => {
+  console.log("UPLOAD FILE TYPE:", file.mimetype);
+  console.log("FILE NAME:", file.originalname);
+
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  // ✅ السماح حسب الامتداد بدل mimetype فقط
   if (
-    file.mimetype === "image/jpeg" ||
-    file.mimetype === "image/jpg" ||
-    file.mimetype === "image/png"
+    file.mimetype.startsWith("image/") ||
+    ext === ".jpg" ||
+    ext === ".jpeg" ||
+    ext === ".png"
   ) {
     cb(null, true);
-    
   } else {
-    cb(null, false); // ❌ لا ترجع error حتى لا يكسر التطبيق
+    cb(null, false);
   }
 };
 // ================= MULTER =================
@@ -866,19 +872,38 @@ app.get("/messages/:userId", auth, async (req, res) => {
 
 
 //================ seen ==================
-app.put("/messages/seen/:userId", auth, async (req, res) => {
+socket.on("send-message", async (data) => {
   try {
-    await pool.query(
-      `UPDATE messages 
-       SET status = 'seen'
-       WHERE sender_id = $1 AND receiver_id = $2`,
-      [req.params.userId, req.user.id]
+    const {
+      sender_id,
+      receiver_id,
+      message,
+      type,
+    } = data;
+
+    // ✅ حفظ الرسالة في PostgreSQL
+    const result = await pool.query(
+      `
+      INSERT INTO messages
+      (sender_id, receiver_id, message, type)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+      `,
+      [
+        sender_id,
+        receiver_id,
+        message,
+        type || "text",
+      ]
     );
 
-    res.json({ success: true });
+    const savedMessage = result.rows[0];
+
+    // ✅ إرسال الرسالة للطرفين
+    io.emit("new-message", savedMessage);
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to update seen status" });
+    console.error("SAVE MESSAGE ERROR ❌", err);
   }
 });
 // ================= ORDERS =================
