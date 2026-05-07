@@ -61,13 +61,11 @@ const storage = multer.diskStorage({
 });
 
 // ================= FILTER =================
- const fileFilter = (req, file, cb) => {
-  console.log("MIME:", file.mimetype);
+ 
+const fileFilter = (req, file, cb) => {
+  console.log("UPLOAD FILE TYPE:", file.mimetype);
 
-  if (!file.mimetype.startsWith("image/")) {
-    return cb(new Error("Only images allowed ❌"));
-  }
-
+  // ✅ قبول كل الملفات
   cb(null, true);
 };
 // ================= MULTER =================
@@ -80,8 +78,11 @@ const upload = multer({
 });
 
 // ================= STATIC ACCESS =================
+app.use("/uploads", express.static(uploadDir));
+
 app.post("/upload", upload.single("image"), async (req, res) => {
   try {
+     console.log("REQ FILE:", req.file);
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
