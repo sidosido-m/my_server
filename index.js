@@ -46,7 +46,57 @@ pool.query("SELECT NOW()")
   .catch(err => {
     console.error("DB Error ❌", err);
   });
+//============== SOCKETS ================
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
 
+  socket.on("online", (userId) => {
+    onlineUsers.set(userId, socket.id);
+    io.emit("user-status", { userId, status: "online" });
+  });
+
+  socket.on("send-message", async (data) => {
+    console.log("MESSAGE:", data);
+
+    const { senderId, receiverId, message, type } = data;
+
+    const result = await pool.query(
+      `INSERT INTO messages(sender_id, receiver_id, message, type, status)
+       VALUES($1,$2,$3,$4,'sent')
+       RETURNING *`,
+      [senderId, receiverId, message, type || "text"]
+    );
+
+    const saved = result.rows[0];
+
+    const receiverSocket = onlineUsers.get(receiverId);
+
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("new-message", saved);
+    }
+
+    const senderSocket = onlineUsers.get(senderId);
+
+    if (senderSocket) {
+      io.to(senderSocket).emit("new-message", saved);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    for (let [userId, socketId] of onlineUsers.entries()) {
+      if (socketId === socket.id) {
+        onlineUsers.delete(userId);
+        io.emit("user-status", { userId, status: "offline" });
+        break;
+      }
+    }
+  });
+});
+
+// 🔥 IMPORTANT
+server.listen(PORT, () => {
+  console.log("Server running 🚀");
+});
 // ================= STORAGE =================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -797,83 +847,6 @@ app.post("/checkout", auth, async (req, res) => {
   ]);
 
   res.json({ success: true });
-});
-//===============Socket events================
-io.on("connection", (socket) => {
-
-  console.log("User connected:", socket.id);
-
-  // 👤 online users
-  socket.on("online", (userId) => {
-    onlineUsers.set(userId, socket.id);
-    io.emit("user-status", { userId, status: "online" });
-  });
-
-  // ================= SEND MESSAGE =================
-  socket.on("send-message", async (data) => {
-    try {
-
-      console.log("MESSAGE RECEIVED:", data);
-
-      const {
-        senderId,
-        receiverId,
-        message,
-        type
-      } = data;
-
-      // ❗ تحقق من البيانات
-      if (!senderId || !receiverId || !message) {
-        console.log("INVALID DATA ❌");
-        return;
-      }
-
-      // 💾 حفظ في DB (مهم جداً)
-      const result = await pool.query(
-        `INSERT INTO messages
-        (sender_id, receiver_id, message, type, status, created_at)
-        VALUES($1,$2,$3,$4,'sent', NOW())
-        RETURNING *`,
-        [
-          senderId,
-          receiverId,
-          message,
-          type || "text"
-        ]
-      );
-
-      const savedMessage = result.rows[0];
-
-      console.log("SAVED MESSAGE ✅", savedMessage);
-
-      // 📡 إرسال للطرف الآخر
-      const receiverSocket = onlineUsers.get(receiverId);
-      if (receiverSocket) {
-        io.to(receiverSocket).emit("new-message", savedMessage);
-      }
-
-      // 📡 إرسال للمرسل أيضاً (مهم لتحديث UI)
-      const senderSocket = onlineUsers.get(senderId);
-      if (senderSocket) {
-        io.to(senderSocket).emit("new-message", savedMessage);
-      }
-
-    } catch (err) {
-      console.log("SOCKET ERROR ❌", err);
-    }
-  });
-
-  // ================= DISCONNECT =================
-  socket.on("disconnect", () => {
-    for (let [userId, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(userId);
-        io.emit("user-status", { userId, status: "offline" });
-        break;
-      }
-    }
-  });
-
 });
 
 // ================= MESSAGE =================
