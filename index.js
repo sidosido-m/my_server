@@ -62,13 +62,18 @@ const storage = multer.diskStorage({
 
 // ================= FILTER =================
  const fileFilter = (req, file, cb) => {
-  console.log("MIME:", file.mimetype);
+  console.log("UPLOAD FILE TYPE:", file.mimetype);
 
-  if (!file.mimetype.startsWith("image/")) {
-    return cb(new Error("Only images allowed ❌"));
+  if (
+    file.mimetype === "image/jpeg" ||
+    file.mimetype === "image/jpg" ||
+    file.mimetype === "image/png"
+  ) {
+    cb(null, true);
+    
+  } else {
+    cb(null, false); // ❌ لا ترجع error حتى لا يكسر التطبيق
   }
-
-  cb(null, true);
 };
 // ================= MULTER =================
 const upload = multer({
