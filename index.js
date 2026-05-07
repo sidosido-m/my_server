@@ -21,7 +21,7 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-
+const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
@@ -93,10 +93,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// 🔥 IMPORTANT
-server.listen(PORT, () => {
-  console.log("Server running 🚀");
-});
+
 // ================= STORAGE =================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -915,7 +912,7 @@ app.get("/", (req, res) => {
 });
 
 // ================= START =================
-const PORT = process.env.PORT || 3000;
+
 
 server.listen(PORT, () => {
   console.log("Server running on " + PORT);
