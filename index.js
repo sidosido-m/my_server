@@ -803,45 +803,67 @@ io.on("connection", (socket) => {
 
   console.log("User connected:", socket.id);
 
-  // user online
+  // 👤 online users
   socket.on("online", (userId) => {
     onlineUsers.set(userId, socket.id);
     io.emit("user-status", { userId, status: "online" });
   });
 
-  // send message realtime
+  // ================= SEND MESSAGE =================
   socket.on("send-message", async (data) => {
     try {
-      const { senderId, receiverId, message, type } = data;
 
+      console.log("MESSAGE RECEIVED:", data);
+
+      const {
+        senderId,
+        receiverId,
+        message,
+        type
+      } = data;
+
+      // ❗ تحقق من البيانات
+      if (!senderId || !receiverId || !message) {
+        console.log("INVALID DATA ❌");
+        return;
+      }
+
+      // 💾 حفظ في DB (مهم جداً)
       const result = await pool.query(
         `INSERT INTO messages
         (sender_id, receiver_id, message, type, status, created_at)
         VALUES($1,$2,$3,$4,'sent', NOW())
         RETURNING *`,
-        [senderId, receiverId, message, type || "text"]
+        [
+          senderId,
+          receiverId,
+          message,
+          type || "text"
+        ]
       );
 
-      const saved = result.rows[0];
+      const savedMessage = result.rows[0];
 
+      console.log("SAVED MESSAGE ✅", savedMessage);
+
+      // 📡 إرسال للطرف الآخر
       const receiverSocket = onlineUsers.get(receiverId);
-      const senderSocket = onlineUsers.get(senderId);
-
-      // 👇 send to receiver
       if (receiverSocket) {
-        io.to(receiverSocket).emit("new-message", saved);
+        io.to(receiverSocket).emit("new-message", savedMessage);
       }
 
-      // 👇 send back to sender (مهم جدًا)
+      // 📡 إرسال للمرسل أيضاً (مهم لتحديث UI)
+      const senderSocket = onlineUsers.get(senderId);
       if (senderSocket) {
-        io.to(senderSocket).emit("new-message", saved);
+        io.to(senderSocket).emit("new-message", savedMessage);
       }
 
-    } catch (e) {
-      console.log("SAVE ERROR", e);
+    } catch (err) {
+      console.log("SOCKET ERROR ❌", err);
     }
   });
 
+  // ================= DISCONNECT =================
   socket.on("disconnect", () => {
     for (let [userId, socketId] of onlineUsers.entries()) {
       if (socketId === socket.id) {
@@ -853,7 +875,6 @@ io.on("connection", (socket) => {
   });
 
 });
-
 
 // ================= MESSAGE =================
 app.get("/messages/:userId", auth, async (req, res) => {
