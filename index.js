@@ -810,26 +810,72 @@ io.on("connection", (socket) => {
   });
 
   // send message realtime
-  socket.on("send-message", async (data) => {
-    const { senderId, receiverId, message } = data;
+socket.on("send-message", async (data) => {
+  try {
 
+    const {
+      sender_id,
+      receiver_id,
+      message,
+      type,
+    } = data;
+
+    // حفظ الرسالة
     const result = await pool.query(
-      `INSERT INTO messages(sender_id, receiver_id, message, status)
-       VALUES($1,$2,$3,'sent') RETURNING *`,
-      [senderId, receiverId, message]
+      `
+      INSERT INTO messages
+      (sender_id, receiver_id, message, type, status)
+      VALUES ($1, $2, $3, $4, 'sent')
+      RETURNING *
+      `,
+      [
+        sender_id,
+        receiver_id,
+        message,
+        type || "text",
+      ]
     );
 
-    const receiverSocket = onlineUsers.get(receiverId);
+    const savedMessage = result.rows[0];
 
+    // هل المستقبل متصل؟
+    const receiverSocket =
+      onlineUsers.get(receiver_id);
+
+    // ارسال realtime
     if (receiverSocket) {
-      io.to(receiverSocket).emit("new-message", result.rows[0]);
 
+      io.to(receiverSocket).emit(
+        "new-message",
+        savedMessage
+      );
+
+      // تحديث delivered
       await pool.query(
-        "UPDATE messages SET status='delivered' WHERE id=$1",
-        [result.rows[0].id]
+        `
+        UPDATE messages
+        SET status='delivered'
+        WHERE id=$1
+        `,
+        [savedMessage.id]
       );
     }
-  });
+
+    // ارسال للمرسل ايضا
+    io.to(socket.id).emit(
+      "message-saved",
+      savedMessage
+    );
+
+  } catch (err) {
+
+    console.error(
+      "SAVE MESSAGE ERROR ❌",
+      err
+    );
+
+  }
+});
 
   socket.on("disconnect", () => {
     for (let [userId, socketId] of onlineUsers.entries()) {
@@ -871,41 +917,7 @@ app.get("/messages/:userId", auth, async (req, res) => {
 
 
 
-//================ seen ==================
-socket.on("send-message", async (data) => {
-  try {
-    const {
-      sender_id,
-      receiver_id,
-      message,
-      type,
-    } = data;
 
-    // ✅ حفظ الرسالة في PostgreSQL
-    const result = await pool.query(
-      `
-      INSERT INTO messages
-      (sender_id, receiver_id, message, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-      `,
-      [
-        sender_id,
-        receiver_id,
-        message,
-        type || "text",
-      ]
-    );
-
-    const savedMessage = result.rows[0];
-
-    // ✅ إرسال الرسالة للطرفين
-    io.emit("new-message", savedMessage);
-
-  } catch (err) {
-    console.error("SAVE MESSAGE ERROR ❌", err);
-  }
-});
 // ================= ORDERS =================
 app.get("/orders", auth, async (req, res) => {
   try {
