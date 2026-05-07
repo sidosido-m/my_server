@@ -64,30 +64,35 @@ const storage = multer.diskStorage({
  const path = require("path");
 
 const fileFilter = (req, file, cb) => {
+
   console.log("UPLOAD FILE TYPE:", file.mimetype);
   console.log("FILE NAME:", file.originalname);
 
   const ext = path.extname(file.originalname).toLowerCase();
 
-  // ✅ السماح حسب الامتداد بدل mimetype فقط
+  // ✅ قبول الصور حتى لو جاءت octet-stream
+  const allowedExtensions = [
+    ".jpg",
+    ".jpeg",
+    ".png",
+  ];
+
   if (
     file.mimetype.startsWith("image/") ||
-    ext === ".jpg" ||
-    ext === ".jpeg" ||
-    ext === ".png"
+    allowedExtensions.includes(ext)
   ) {
     cb(null, true);
   } else {
-    cb(null, false);
+    cb(new Error("Only images allowed ❌"));
   }
 };
 // ================= MULTER =================
 const upload = multer({
   storage,
-  fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024,
   },
+  fileFilter,
 });
 
 // ================= STATIC ACCESS =================
