@@ -12,6 +12,15 @@ const bcrypt = require("bcrypt");
 const auth = require("./middleware/auth");
 const app = express();
 const cloudinary = require("cloudinary").v2;
+const http = require("http");
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+const onlineUsers = new Map();
+
+const io = new Server(server, {
+  cors: { origin: "*" },
+});
+
 
 app.use(cors());
 app.use(express.json());
@@ -786,37 +795,86 @@ app.post("/checkout", auth, async (req, res) => {
 
   res.json({ success: true });
 });
-// ================= MESSAGE =================
-app.post("/messages", auth, async (req, res) => {
-  const { receiver_id, message } = req.body;
+//===============Socket events================
+io.on("connection", (socket) => {
 
-  const result = await pool.query(
-    `INSERT INTO messages(sender_id, receiver_id, message)
-     VALUES($1,$2,$3) RETURNING *`,
-    [req.user.id, receiver_id, message]
-  );
+  console.log("User connected:", socket.id);
 
-  res.json(result.rows[0]);
+  // user online
+  socket.on("online", (userId) => {
+    onlineUsers.set(userId, socket.id);
+    io.emit("user-status", { userId, status: "online" });
+  });
+
+  // send message realtime
+  socket.on("send-message", async (data) => {
+    const { senderId, receiverId, message } = data;
+
+    const result = await pool.query(
+      `INSERT INTO messages(sender_id, receiver_id, message, status)
+       VALUES($1,$2,$3,'sent') RETURNING *`,
+      [senderId, receiverId, message]
+    );
+
+    const receiverSocket = onlineUsers.get(receiverId);
+
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("new-message", result.rows[0]);
+
+      await pool.query(
+        "UPDATE messages SET status='delivered' WHERE id=$1",
+        [result.rows[0].id]
+      );
+    }
+  });
+
+  socket.on("disconnect", () => {
+    for (let [userId, socketId] of onlineUsers.entries()) {
+      if (socketId === socket.id) {
+        onlineUsers.delete(userId);
+        io.emit("user-status", { userId, status: "offline" });
+        break;
+      }
+    }
+  });
+
 });
-
+// ================= MESSAGE =================
 app.get("/messages/:userId", auth, async (req, res) => {
   try {
     const otherUser = parseInt(req.params.userId);
     const limit = 50;
 
     const result = await pool.query(
-      `SELECT * FROM messages
-       WHERE (sender_id=$1 AND receiver_id=$2)
-          OR (sender_id=$2 AND receiver_id=$1)
-       ORDER BY created_at ASC
+      `SELECT 
+        m.*,
+        u.name,
+        u.image as user_image
+       FROM messages m
+       JOIN users u ON u.id = m.sender_id
+       WHERE (m.sender_id=$1 AND m.receiver_id=$2)
+          OR (m.sender_id=$2 AND m.receiver_id=$1)
+       ORDER BY m.created_at ASC
        LIMIT $3`,
       [req.user.id, otherUser, limit]
     );
 
     res.json(result.rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to load messages" });
   }
+});
+//================ seen ==================
+app.put("/messages/seen/:userId", auth, async (req, res) => {
+  await pool.query(
+    `UPDATE messages 
+     SET status='seen'
+     WHERE sender_id=$1 AND receiver_id=$2`,
+    [req.params.userId, req.user.id]
+  );
+
+  res.json({ success: true });
 });
 // ================= ORDERS =================
 app.get("/orders", auth, async (req, res) => {
@@ -856,6 +914,6 @@ app.get("/", (req, res) => {
 // ================= START =================
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Server running on port " + PORT);
+server.listen(PORT, () => {
+  console.log("Server running on " + PORT);
 });
