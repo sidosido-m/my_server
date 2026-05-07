@@ -61,30 +61,14 @@ const storage = multer.diskStorage({
 });
 
 // ================= FILTER =================
- const path = require("path");
+ const fileFilter = (req, file, cb) => {
+  console.log("MIME:", file.mimetype);
 
-const fileFilter = (req, file, cb) => {
-
-  console.log("UPLOAD FILE TYPE:", file.mimetype);
-  console.log("FILE NAME:", file.originalname);
-
-  const ext = path.extname(file.originalname).toLowerCase();
-
-  // ✅ قبول الصور حتى لو جاءت octet-stream
-  const allowedExtensions = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-  ];
-
-  if (
-    file.mimetype.startsWith("image/") ||
-    allowedExtensions.includes(ext)
-  ) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only images allowed ❌"));
+  if (!file.mimetype.startsWith("image/")) {
+    return cb(new Error("Only images allowed ❌"));
   }
+
+  cb(null, true);
 };
 // ================= MULTER =================
 const upload = multer({
@@ -102,22 +86,26 @@ app.post("/upload", upload.single("image"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    // رفع الصورة إلى Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "my_app",
+      folder: "my_app", // اسم فولدر في Cloudinary
     });
 
+    // حذف الصورة من السيرفر المحلي (اختياري لكن مهم)
     fs.unlinkSync(req.file.path);
 
-    return res.json({
-      url: result.secure_url,
-    });
+    // الرابط النهائي
+    const imageUrl = result.secure_url;
+
+    console.log("CLOUDINARY URL:", imageUrl);
+
+    res.json({ url: imageUrl });
 
   } catch (err) {
     console.error("UPLOAD ERROR ❌", err);
-    return res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
-
 // ================= REGISTER =================
 app.post("/register", async (req, res) => {
   try {
