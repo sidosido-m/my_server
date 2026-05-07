@@ -810,28 +810,37 @@ io.on("connection", (socket) => {
   });
 
   // send message realtime
-socket.on("send-message", async (data) => {
-  try {
-    const { senderId, receiverId, message, type } = data;
+  socket.on("send-message", async (data) => {
+    try {
+      const { senderId, receiverId, message, type } = data;
 
-    const result = await pool.query(
-      `INSERT INTO messages(sender_id, receiver_id, message, type, status)
-       VALUES($1,$2,$3,$4,'sent') RETURNING *`,
-      [senderId, receiverId, message, type || "text"]
-    );
+      const result = await pool.query(
+        `INSERT INTO messages
+        (sender_id, receiver_id, message, type, status, created_at)
+        VALUES($1,$2,$3,$4,'sent', NOW())
+        RETURNING *`,
+        [senderId, receiverId, message, type || "text"]
+      );
 
-    const saved = result.rows[0];
+      const saved = result.rows[0];
 
-    const receiverSocket = onlineUsers.get(receiverId);
+      const receiverSocket = onlineUsers.get(receiverId);
+      const senderSocket = onlineUsers.get(senderId);
 
-    if (receiverSocket) {
-      io.to(receiverSocket).emit("new-message", saved);
+      // 👇 send to receiver
+      if (receiverSocket) {
+        io.to(receiverSocket).emit("new-message", saved);
+      }
+
+      // 👇 send back to sender (مهم جدًا)
+      if (senderSocket) {
+        io.to(senderSocket).emit("new-message", saved);
+      }
+
+    } catch (e) {
+      console.log("SAVE ERROR", e);
     }
-
-  } catch (e) {
-    console.log("SAVE ERROR", e);
-  }
-});
+  });
 
   socket.on("disconnect", () => {
     for (let [userId, socketId] of onlineUsers.entries()) {
@@ -844,6 +853,8 @@ socket.on("send-message", async (data) => {
   });
 
 });
+
+
 // ================= MESSAGE =================
 app.get("/messages/:userId", auth, async (req, res) => {
   try {
@@ -851,18 +862,18 @@ app.get("/messages/:userId", auth, async (req, res) => {
     const limit = 50;
 
     const result = await pool.query(
-      `SELECT 
-        m.*,
-        u.name,
-        u.image as user_image
-       FROM messages m
-       JOIN users u ON u.id = m.sender_id
-       WHERE (m.sender_id=$1 AND m.receiver_id=$2)
-          OR (m.sender_id=$2 AND m.receiver_id=$1)
-       ORDER BY m.created_at ASC
-       LIMIT $3`,
-      [req.user.id, otherUser, limit]
-    );
+  `SELECT 
+    m.*,
+    u.name,
+    u.image as user_image
+   FROM messages m
+   JOIN users u ON u.id = m.sender_id
+   WHERE (m.sender_id=$1 AND m.receiver_id=$2)
+      OR (m.sender_id=$2 AND m.receiver_id=$1)
+   ORDER BY m.created_at ASC
+   LIMIT $3`,
+  [req.user.id, otherUser, limit]
+);
 
     res.json(result.rows);
   } catch (err) {
