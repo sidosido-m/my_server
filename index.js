@@ -812,68 +812,24 @@ io.on("connection", (socket) => {
   // send message realtime
 socket.on("send-message", async (data) => {
   try {
+    const { senderId, receiverId, message, type } = data;
 
-    const {
-      sender_id,
-      receiver_id,
-      message,
-      type,
-    } = data;
-
-    // حفظ الرسالة
     const result = await pool.query(
-      `
-      INSERT INTO messages
-      (sender_id, receiver_id, message, type, status)
-      VALUES ($1, $2, $3, $4, 'sent')
-      RETURNING *
-      `,
-      [
-        sender_id,
-        receiver_id,
-        message,
-        type || "text",
-      ]
+      `INSERT INTO messages(sender_id, receiver_id, message, type, status)
+       VALUES($1,$2,$3,$4,'sent') RETURNING *`,
+      [senderId, receiverId, message, type || "text"]
     );
 
-    const savedMessage = result.rows[0];
+    const saved = result.rows[0];
 
-    // هل المستقبل متصل؟
-    const receiverSocket =
-      onlineUsers.get(receiver_id);
+    const receiverSocket = onlineUsers.get(receiverId);
 
-    // ارسال realtime
     if (receiverSocket) {
-
-      io.to(receiverSocket).emit(
-        "new-message",
-        savedMessage
-      );
-
-      // تحديث delivered
-      await pool.query(
-        `
-        UPDATE messages
-        SET status='delivered'
-        WHERE id=$1
-        `,
-        [savedMessage.id]
-      );
+      io.to(receiverSocket).emit("new-message", saved);
     }
 
-    // ارسال للمرسل ايضا
-    io.to(socket.id).emit(
-      "message-saved",
-      savedMessage
-    );
-
-  } catch (err) {
-
-    console.error(
-      "SAVE MESSAGE ERROR ❌",
-      err
-    );
-
+  } catch (e) {
+    console.log("SAVE ERROR", e);
   }
 });
 
