@@ -78,33 +78,39 @@ const upload = multer({
 });
 
 // ================= STATIC ACCESS =================
-app.use("/uploads", express.static(uploadDir));
-
 app.post("/upload", upload.single("image"), async (req, res) => {
   try {
-     console.log("REQ FILE:", req.file);
+
+    console.log("REQ FILE:", req.file);
+
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return res.status(400).json({
+        error: "NO FILE RECEIVED"
+      });
     }
 
-    // رفع الصورة إلى Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "my_app", // اسم فولدر في Cloudinary
-    });
+    const result = await cloudinary.uploader.upload(
+      req.file.path,
+      {
+        folder: "my_app",
+      }
+    );
 
-    // حذف الصورة من السيرفر المحلي (اختياري لكن مهم)
+    console.log("CLOUDINARY RESULT:", result);
+
     fs.unlinkSync(req.file.path);
 
-    // الرابط النهائي
-    const imageUrl = result.secure_url;
-
-    console.log("CLOUDINARY URL:", imageUrl);
-
-    res.json({ url: imageUrl });
+    res.json({
+      url: result.secure_url,
+    });
 
   } catch (err) {
+
     console.error("UPLOAD ERROR ❌", err);
-    res.status(500).json({ error: err.message });
+
+    res.status(500).json({
+      error: err.message,
+    });
   }
 });
 // ================= REGISTER =================
