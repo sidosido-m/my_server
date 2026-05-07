@@ -80,33 +80,25 @@ const upload = multer({
 });
 
 // ================= STATIC ACCESS =================
-app.use("/uploads", express.static(uploadDir));
-
-// ================= upload =================
-  app.post("/upload", upload.single("image"), async (req, res) => {
+app.post("/upload", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // رفع الصورة إلى Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "my_app", // اسم فولدر في Cloudinary
+      folder: "my_app",
     });
 
-    // حذف الصورة من السيرفر المحلي (اختياري لكن مهم)
     fs.unlinkSync(req.file.path);
 
-    // الرابط النهائي
-    const imageUrl = result.secure_url;
-
-    console.log("CLOUDINARY URL:", imageUrl);
-
-    res.json({ url: imageUrl });
+    return res.json({
+      url: result.secure_url,
+    });
 
   } catch (err) {
     console.error("UPLOAD ERROR ❌", err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -865,16 +857,24 @@ app.get("/messages/:userId", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to load messages" });
   }
 });
+
+
+
 //================ seen ==================
 app.put("/messages/seen/:userId", auth, async (req, res) => {
-  await pool.query(
-    `UPDATE messages 
-     SET status='seen'
-     WHERE sender_id=$1 AND receiver_id=$2`,
-    [req.params.userId, req.user.id]
-  );
+  try {
+    await pool.query(
+      `UPDATE messages 
+       SET status = 'seen'
+       WHERE sender_id = $1 AND receiver_id = $2`,
+      [req.params.userId, req.user.id]
+    );
 
-  res.json({ success: true });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update seen status" });
+  }
 });
 // ================= ORDERS =================
 app.get("/orders", auth, async (req, res) => {
