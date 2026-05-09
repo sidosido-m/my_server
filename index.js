@@ -93,7 +93,6 @@ io.on("connection", (socket) => {
   });
 });
 
-
 // ================= STORAGE =================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -821,30 +820,180 @@ app.post("/like/:productId", auth, async (req, res) => {
 });
 // ================= CHECKOUT =================
 app.post("/checkout", auth, async (req, res) => {
-  const cart = await pool.query(
-    `SELECT c.*,p.price FROM cart c
-     JOIN products p ON p.id=c.product_id
-     WHERE c.user_id=$1`,
-    [req.user.id]
-  );
+  try {
 
-  let total = 0;
+    const cart = await pool.query(
+      `SELECT 
+        c.*,
+        p.price,
+        p.seller_id
+       FROM cart c
+       JOIN products p ON p.id = c.product_id
+       WHERE c.user_id=$1`,
+      [req.user.id]
+    );
 
-  cart.rows.forEach(i => {
-    total += i.price * i.quantity;
-  });
+    if (cart.rows.length === 0) {
+      return res.status(400).json({
+        error: "Cart is empty"
+      });
+    }
 
-  await pool.query(
-    "INSERT INTO orders(user_id,total_price) VALUES($1,$2)",
-    [req.user.id, total]
-  );
+    let total = 0;
 
-  await pool.query("DELETE FROM cart WHERE user_id=$1", [
-    req.user.id,
-  ]);
+    cart.rows.forEach(item => {
+      total += item.price * item.quantity;
+    });
 
-  res.json({ success: true });
+    // CREATE ORDER
+    const orderResult = await pool.query(
+      `INSERT INTO orders(user_id,total_price,status)
+       VALUES($1,$2,'pending')
+       RETURNING *`,
+      [req.user.id, total]
+    );
+
+    const order = orderResult.rows[0];
+
+    // SAVE ITEMS
+    for (const item of cart.rows) {
+
+      await pool.query(
+        `INSERT INTO order_items(
+          order_id,
+          product_id,
+          quantity,
+          price
+        )
+        VALUES($1,$2,$3,$4)`,
+        [
+          order.id,
+          item.product_id,
+          item.quantity,
+          item.price,
+        ]
+      );
+    }
+
+    // CLEAR CART
+    await pool.query(
+      "DELETE FROM cart WHERE user_id=$1",
+      [req.user.id]
+    );
+
+    res.json({
+      success: true,
+      order
+    });
+
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({
+      error: e.message
+    });
+  }
 });
+
+// ================= SELLER ORDERS =================
+app.get("/seller-orders", auth, async (req, res) => {
+  try {
+
+    const result = await pool.query(
+      `
+      SELECT
+        o.id as order_id,
+        o.status,
+        o.created_at,
+
+        u.name as buyer_name,
+        u.image as buyer_image,
+
+        p.name as product_name,
+        p.image as product_image,
+
+        oi.quantity,
+        oi.price
+
+      FROM order_items oi
+
+      JOIN orders o
+      ON o.id = oi.order_id
+
+      JOIN products p
+      ON p.id = oi.product_id
+
+      JOIN users u
+      ON u.id = o.user_id
+
+      WHERE p.seller_id=$1
+
+      ORDER BY o.created_at DESC
+      `,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+
+  } catch (e) {
+    res.status(500).json({
+      error: e.message
+    });
+  }
+});
+
+// ================= CONVERSATIONS =================
+app.get("/conversations", auth, async (req, res) => {
+  try {
+
+    const result = await pool.query(
+      `
+      SELECT DISTINCT ON (
+        CASE
+          WHEN m.sender_id = $1 THEN m.receiver_id
+          ELSE m.sender_id
+        END
+      )
+
+      m.id,
+      m.message,
+      m.created_at,
+
+      u.id as user_id,
+      u.name,
+      u.image
+
+      FROM messages m
+
+      JOIN users u
+      ON u.id = CASE
+        WHEN m.sender_id = $1 THEN m.receiver_id
+        ELSE m.sender_id
+      END
+
+      WHERE m.sender_id = $1
+      OR m.receiver_id = $1
+
+      ORDER BY
+      CASE
+        WHEN m.sender_id = $1 THEN m.receiver_id
+        ELSE m.sender_id
+      END,
+      m.created_at DESC
+      `
+      ,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({
+      error: "Failed"
+    });
+  }
+});
+
 
 // ================= MESSAGE =================
 app.get("/messages/:userId", auth, async (req, res) => {
