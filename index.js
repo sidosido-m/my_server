@@ -162,8 +162,8 @@ app.post("/upload", upload.single("image"), async (req, res) => {
 // ================= REGISTER =================
 app.post("/register", async (req, res) => {
   try {
-    const { name, username, email, password, role,phone,countryCode,gender } = req.body;
-
+    const { name, email, password, role,phone,countryCode,gender } = req.body;
+     let username = email.split("@")[0].toLowerCase();
     // 🔴 تحقق من وجود المستخدم
     const exists = await pool.query(
       "SELECT * FROM users WHERE email=$1",
@@ -176,6 +176,14 @@ app.post("/register", async (req, res) => {
         error: "Email already exists ❌",
       });
     }
+    const userExists = await pool.query(
+  "SELECT * FROM users WHERE username=$1",
+  [username]
+);
+
+if (userExists.rows.length > 0) {
+  username = username + Math.floor(Math.random() * 9999);
+}
 
     const hash = await bcrypt.hash(password, 10);
 
@@ -362,14 +370,17 @@ console.log("BG:", background_image);
     email=$2,
     username=$3,
     password=$4,
-    image = COALESCE($5, image),
-    background_image = COALESCE($6, background_image)
-   WHERE id=$7`,
+     phone=$5,
+    image = COALESCE($6, image),
+    background_image = COALESCE($7, background_image)
+   WHERE id=$8`,
+
   [
     name,
     email,
     username,
     hashedPassword,
+     phone,
     image,
     background_image,
     req.user.id,
@@ -388,7 +399,7 @@ console.log("BG:", background_image);
 app.get("/profile", auth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, username, email, image, background_image, role
+      `SELECT id, name, username, email, image,phone, background_image, role
        FROM users WHERE id=$1`,
       [req.user.id]
     );
