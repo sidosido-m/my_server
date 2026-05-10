@@ -193,7 +193,7 @@ if (userExists.rows.length > 0) {
     await pool.query(
       `INSERT INTO users (name, username, email, password, role,phone,country_code ,gender,otp, otp_expire, is_verified)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [name, username, email, hash, role,phone,country_code ,gender, otp, otpExpire, false]
+      [name, username, email, hash, role,phone,countryCode  ,gender, otp, otpExpire, false]
     );
 
     console.log("OTP:", otp);
