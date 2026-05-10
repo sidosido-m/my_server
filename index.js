@@ -162,7 +162,7 @@ app.post("/upload", upload.single("image"), async (req, res) => {
 // ================= REGISTER =================
 app.post("/register", async (req, res) => {
   try {
-    const { name, username, email, password, role } = req.body;
+    const { name, username, email, password, role,phone,countryCode,gender } = req.body;
 
     // 🔴 تحقق من وجود المستخدم
     const exists = await pool.query(
@@ -183,8 +183,8 @@ app.post("/register", async (req, res) => {
     const otpExpire = new Date(Date.now() + 60 * 1000);
 
     await pool.query(
-      `INSERT INTO users (name, username, email, password, role, otp, otp_expire, is_verified)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      `INSERT INTO users (name, username, email, password, role, otp,phone,country_code,gender, otp_expire, is_verified)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [name, username, email, hash, role, otp, otpExpire, false]
     );
 
@@ -327,6 +327,7 @@ app.put("/profile", auth, async (req, res) => {
       name,
       email,
       username,
+      phone,
       oldPassword,
       newPassword,
       image,
