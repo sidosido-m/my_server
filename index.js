@@ -435,22 +435,27 @@ app.get("/profile", auth, async (req, res) => {
 // ================= PRODUCTS =================
 
 // 🔥 GET ALL PRODUCTS (لكل المستخدمين - الصفحة الرئيسية)
-app.get("/products", async (req, res) => {
+// 🔥 ADD PRODUCT
+app.post("/products", auth, async (req, res) => {
   try {
-    const data = await pool.query(
-      `SELECT p.*, u.name as seller_name, u.image as seller_image
-       FROM products p
-       JOIN users u ON u.id = p.seller_id
-       ORDER BY p.id DESC`
+    const { name, price, image, description } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO products(name, price, seller_id, image, description)
+       VALUES($1,$2,$3,$4,$5) RETURNING *`,
+      [name, price, req.user.id, image, description]
     );
 
-    res.json(data.rows);
+    res.json({
+      success: true,
+      product: result.rows[0],
+    });
+
   } catch (err) {
-    console.error("GET PRODUCTS ERROR ❌", err);
+    console.error("ADD PRODUCT ERROR ❌", err);
     res.status(500).json({ error: "Server error" });
   }
 });
-
 
 // 🔥 GET MY PRODUCTS (منتجات المستخدم فقط)
 app.get("/my-products", auth, async (req, res) => {
