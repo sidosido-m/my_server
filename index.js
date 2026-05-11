@@ -354,9 +354,11 @@ app.put("/profile", auth, async (req, res) => {
     if (newPassword) {
       const valid = await bcrypt.compare(oldPassword, currentUser.password);
 
-      if (!valid) {
-        return res.status(400).json({ error: "Wrong old password" });
-      }
+      if (newPassword && !oldPassword) {
+  return res.status(400).json({
+    error: "Old password required",
+  });
+}
 
       hashedPassword = await bcrypt.hash(newPassword, 10);
     }
@@ -469,11 +471,11 @@ app.get("/my-products", auth, async (req, res) => {
 // 🔥 ADD PRODUCT
 app.post("/products", auth, async (req, res) => {
   try {
-    const { name, price, image } = req.body;
+    const { name, price, image , description } = req.body;
 
     const result = await pool.query(
-      `INSERT INTO products(name, price, seller_id, image)
-       VALUES($1,$2,$3,$4) RETURNING *`,
+      `INSERT INTO products(name, price, seller_id, image, description)
+       VALUES($1,$2,$3,$4,$5) RETURNING *`,
       [name, price, req.user.id, image] // 🔥 رابط Supabase
     );
 
