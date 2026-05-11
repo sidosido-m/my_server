@@ -921,7 +921,6 @@ app.post("/checkout", auth, async (req, res) => {
 // ================= SELLER ORDERS =================
 app.get("/seller-orders", auth, async (req, res) => {
   try {
-
     const result = await pool.query(
       `
       SELECT
@@ -940,31 +939,25 @@ app.get("/seller-orders", auth, async (req, res) => {
 
       FROM order_items oi
 
-      JOIN orders o
-      ON o.id = oi.order_id
+      JOIN orders o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      JOIN users u ON u.id = o.user_id
 
-      JOIN products p
-      ON p.id = oi.product_id
-
-      JOIN users u
-      ON u.id = o.user_id
-
-      WHERE p.seller_id=$1
+      WHERE p.seller_id = $1
 
       ORDER BY o.created_at DESC
       `,
       [req.user.id]
     );
 
-    res.json(result.rows);
+    return res.json(result.rows); // ✔️ always array
 
   } catch (e) {
-    res.status(500).json({
-      error: e.message
-    });
+    console.error("SELLER ORDERS ERROR ❌", e);
+
+    return res.json([]); // 🔥 مهم جدًا حتى ما يعلق Flutter
   }
 });
-
 // ================= CONVERSATIONS =================
 app.get("/conversations", auth, async (req, res) => {
   try {
