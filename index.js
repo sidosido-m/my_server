@@ -928,14 +928,11 @@ app.post("/checkout", auth, async (req, res) => {
 app.get("/seller-orders", auth, async (req, res) => {
   try {
 
-    console.log("SELLER ID =", req.user.id);
-
     const result = await pool.query(
       `
       SELECT
         o.id as order_id,
         o.status,
-        o.created_at,
 
         u.name as buyer_name,
         u.image as buyer_image,
@@ -959,17 +956,16 @@ app.get("/seller-orders", auth, async (req, res) => {
 
       WHERE p.seller_id=$1
 
-      ORDER BY o.created_at DESC
+      ORDER BY o.id DESC
       `,
       [req.user.id]
     );
 
-    console.log(result.rows);
-
     res.json(result.rows);
 
   } catch (e) {
-    console.log(e);
+    console.log("SELLER ORDERS ERROR ❌", e);
+
     res.status(500).json({
       error: e.message
     });
