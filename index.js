@@ -880,24 +880,30 @@ app.post("/checkout", auth, async (req, res) => {
     const order = orderResult.rows[0];
 
     // SAVE ITEMS
-    for (const item of cart.rows) {
+  for (const item of cart.rows) {
 
-      await pool.query(
-        `INSERT INTO order_items(
-          order_id,
-          product_id,
-          quantity,
-          price
-        )
-        VALUES($1,$2,$3,$4)`,
-        [
-          order.id,
-          item.product_id,
-          item.quantity,
-          item.price,
-        ]
-      );
-    }
+  const productId = item.product_id || item.productId;
+  const qty = item.quantity || item.qty || 1;
+  const price = item.price || 0;
+
+  if (!productId) continue;
+
+  await pool.query(
+    `INSERT INTO order_items(
+      order_id,
+      product_id,
+      quantity,
+      price
+    )
+    VALUES($1,$2,$3,$4)`,
+    [
+      order.id,
+      productId,
+      qty,
+      price
+    ]
+  );
+}
 
     // CLEAR CART
     await pool.query(
