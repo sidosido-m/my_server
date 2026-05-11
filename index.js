@@ -435,25 +435,30 @@ app.get("/profile", auth, async (req, res) => {
 // ================= PRODUCTS =================
 
 // 🔥 GET ALL PRODUCTS (لكل المستخدمين - الصفحة الرئيسية)
-// 🔥 ADD PRODUCT
-app.post("/products", auth, async (req, res) => {
+app.get("/products", async (req, res) => {
   try {
-    const { name, price, image, description } = req.body;
 
-    const result = await pool.query(
-      `INSERT INTO products(name, price, seller_id, image, description)
-       VALUES($1,$2,$3,$4,$5) RETURNING *`,
-      [name, price, req.user.id, image, description]
-    );
+    const data = await pool.query(`
+      SELECT 
+        p.*,
+        u.name AS seller_name,
+        u.image AS seller_image
 
-    res.json({
-      success: true,
-      product: result.rows[0],
-    });
+      FROM products p
+      JOIN users u
+      ON u.id = p.seller_id
+
+      ORDER BY p.id DESC
+    `);
+
+    res.json(data.rows);
 
   } catch (err) {
-    console.error("ADD PRODUCT ERROR ❌", err);
-    res.status(500).json({ error: "Server error" });
+    console.error("GET PRODUCTS ERROR ❌", err);
+
+    res.status(500).json({
+      error: "Server error"
+    });
   }
 });
 
@@ -476,12 +481,12 @@ app.get("/my-products", auth, async (req, res) => {
 // 🔥 ADD PRODUCT
 app.post("/products", auth, async (req, res) => {
   try {
-    const { name, price, image , description } = req.body;
+    const { name, price, image, description } = req.body;
 
     const result = await pool.query(
       `INSERT INTO products(name, price, seller_id, image, description)
        VALUES($1,$2,$3,$4,$5) RETURNING *`,
-      [name, price, req.user.id, image] // 🔥 رابط Supabase
+      [name, price, req.user.id, image, description]
     );
 
     res.json({
@@ -490,7 +495,7 @@ app.post("/products", auth, async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("ADD PRODUCT ERROR ❌", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -499,14 +504,14 @@ app.post("/products", auth, async (req, res) => {
 // 🔥 UPDATE PRODUCT (مهم: فقط صاحب المنتج)
 app.put("/products/:id", auth, async (req, res) => {
   try {
-    const { name, price, image } = req.body;
+    const { name, price, image ,description } = req.body;
 
 const result = await pool.query(
   `UPDATE products 
-   SET name=$1, price=$2, image=COALESCE($3, image)
-   WHERE id=$4 AND seller_id=$5
+   SET name=$1, price=$2, image=COALESCE($3, image),  description=$4
+   WHERE id=$5 AND seller_id=$6 
    RETURNING *`,
-  [name, price, image, req.params.id, req.user.id]
+  [name, price, image,  description, req.params.id, req.user.id]
 );
 
     if (result.rowCount === 0) {
