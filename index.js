@@ -112,7 +112,18 @@ const fileFilter = (req, file, cb) => {
   console.log("UPLOAD FILE TYPE:", file.mimetype);
 
   // ✅ قبول كل الملفات
+  const allowed = [
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp"
+];
+
+if (allowed.includes(file.mimetype)) {
   cb(null, true);
+} else {
+  cb(new Error("Only images allowed"));
+}
 };
 // ================= MULTER =================
 const upload = multer({
@@ -303,11 +314,10 @@ app.post("/login", async (req, res) => {
 
     // 2️⃣ check OTP verification
     if (!user.is_verified) {
-      return res.json({
-        success: false,
-        needOtp: true,
-        email: user.email
-      });
+      return res.status(403).json({
+  success: false,
+  needOtp: true,
+});
     }
 
     // ======= create token============
@@ -352,16 +362,26 @@ app.put("/profile", auth, async (req, res) => {
     let hashedPassword = currentUser.password;
 
     if (newPassword) {
-      const valid = await bcrypt.compare(oldPassword, currentUser.password);
 
-      if (newPassword && !oldPassword) {
-  return res.status(400).json({
-    error: "Old password required",
-  });
+  if (!oldPassword) {
+    return res.status(400).json({
+      error: "Old password required",
+    });
+  }
+
+  const valid = await bcrypt.compare(
+    oldPassword,
+    currentUser.password
+  );
+
+  if (!valid) {
+    return res.status(400).json({
+      error: "Wrong old password",
+    });
+  }
+
+  hashedPassword = await bcrypt.hash(newPassword, 10);
 }
-
-      hashedPassword = await bcrypt.hash(newPassword, 10);
-    }
 console.log("REQ BODY:", req.body);
     console.log("IMAGE:", image);
 console.log("BG:", background_image);
@@ -870,13 +890,48 @@ app.post("/checkout", auth, async (req, res) => {
     });
 
     // CREATE ORDER
-    const orderResult = await pool.query(
-      `INSERT INTO orders(user_id,total_price,status)
-       VALUES($1,$2,'pending')
-       RETURNING *`,
-      [req.user.id, total]
-    );
+    const {
+  fullName,
+  phone,
+  country,
+  state,
+  city,
+  zipCode,
+  note
+} = req.body;
 
+const orderResult = await pool.query(
+`
+INSERT INTO orders(
+  user_id,
+  total_price,
+  status,
+  full_name,
+  phone,
+  country,
+  state,
+  city,
+  zip_code,
+  note
+)
+VALUES(
+  $1,$2,'pending',
+  $3,$4,$5,$6,$7,$8,$9
+)
+RETURNING *
+`,
+[
+  req.user.id,
+  total,
+  fullName,
+  phone,
+  country,
+  state,
+  city,
+  zipCode,
+  note
+]
+);
     const order = orderResult.rows[0];
 
     // SAVE ITEMS
@@ -934,7 +989,16 @@ app.get("/seller-orders", auth, async (req, res) => {
         o.id as order_id,
         o.status,
 
-        u.name as buyer_name,
+         o.full_name,
+  o.phone,
+  o.country,
+  o.state,
+  o.city,
+  o.zip_code,
+  o.note,
+
+  u.name as buyer_name,
+        
         u.image as buyer_image,
 
         p.name as product_name,
@@ -965,6 +1029,85 @@ app.get("/seller-orders", auth, async (req, res) => {
 
   } catch (e) {
     console.log("SELLER ORDERS ERROR ❌", e);
+
+    res.status(500).json({
+      error: e.message
+    });
+  }
+});
+// ================= order status =================
+app.put("/orders/:id/status", auth, async (req, res) => {
+  try {
+
+    const { status } = req.body;
+
+   const check = await pool.query(
+ `
+ SELECT *
+ FROM order_items oi
+ JOIN products p
+ ON p.id = oi.product_id
+ WHERE oi.order_id=$1
+ AND p.seller_id=$2
+ `,
+ [req.params.id, req.user.id]
+);
+
+if (check.rows.length === 0) {
+  return res.status(403).json({
+    error: "Not allowed"
+  });
+}
+
+    res.json({
+      success: true
+    });
+
+  } catch (e) {
+
+    console.log("UPDATE STATUS ERROR ❌", e);
+
+    res.status(500).json({
+      error: e.message
+    });
+  }
+});
+
+app.get("/my-orders", auth, async (req, res) => {
+  try {
+
+    const result = await pool.query(
+      `
+      SELECT
+        o.id as order_id,
+        o.status,
+
+        p.name as product_name,
+        p.image as product_image,
+
+        oi.quantity,
+        oi.price
+
+      FROM orders o
+
+      JOIN order_items oi
+      ON oi.order_id = o.id
+
+      JOIN products p
+      ON p.id = oi.product_id
+
+      WHERE o.user_id=$1
+
+      ORDER BY o.id DESC
+      `,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+
+  } catch (e) {
+
+    console.log(e);
 
     res.status(500).json({
       error: e.message
