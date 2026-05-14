@@ -1233,6 +1233,6 @@ app.get("/", (req, res) => {
 // ================= START =================
 
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log("Server running on", PORT);
+app.get("/health", (req, res) => {
+  res.json({ ok: true, status: "server is running" });
 });
