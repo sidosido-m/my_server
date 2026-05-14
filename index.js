@@ -980,99 +980,96 @@ RETURNING *
 });
 
 // ================= SELLER ORDERS =================
-app.get("/seller-orders", auth, async (req, res) => {
-  try {
-
-    const result = await pool.query(
-      `
-      SELECT
-        o.id as order_id,
-        o.status,
-
-         o.full_name,
-  o.phone,
-  o.country,
-  o.state,
-  o.city,
-  o.zip_code,
-  o.note,
-
-  u.name as buyer_name,
-        
-        u.image as buyer_image,
-
-        p.name as product_name,
-        p.image as product_image,
-
-        oi.quantity,
-        oi.price
-
-      FROM order_items oi
-
-      JOIN orders o
-      ON o.id = oi.order_id
-
-      JOIN products p
-      ON p.id = oi.product_id
-
-      JOIN users u
-      ON u.id = o.user_id
-
-      WHERE p.seller_id=$1
-
-      ORDER BY o.id DESC
-      `,
-      [req.user.id]
-    );
-
-    res.json(result.rows);
-
-  } catch (e) {
-    console.log("SELLER ORDERS ERROR ❌", e);
-
-    res.status(500).json({
-      error: e.message
-    });
-  }
-});
-// ================= order status =================
 app.put("/orders/:id/status", auth, async (req, res) => {
   try {
-
     const { status } = req.body;
+    const orderId = req.params.id;
 
-   const check = await pool.query(
- `
- SELECT *
- FROM order_items oi
- JOIN products p
- ON p.id = oi.product_id
- WHERE oi.order_id=$1
- AND p.seller_id=$2
- `,
- [req.params.id, req.user.id]
-);
+    // 1. نجيب صاحب الطلب (المشتري)
+    const check = await pool.query(
+      `
+      SELECT o.user_id
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      JOIN orders o ON o.id = oi.order_id
+      WHERE oi.order_id=$1 AND p.seller_id=$2
+      LIMIT 1
+      `,
+      [orderId, req.user.id]
+    );
 
-if (check.rows.length === 0) {
-  return res.status(403).json({
-    error: "Not allowed"
-  });
-}
+    if (check.rows.length === 0) {
+      return res.status(403).json({ error: "Not allowed" });
+    }
 
-    res.json({
-      success: true
-    });
+    const buyerId = check.rows[0].user_id;
+
+    // 2. تحديث الحالة
+    await pool.query(
+      "UPDATE orders SET status=$1 WHERE id=$2",
+      [status, orderId]
+    );
+
+    // 3. تجهيز النصوص (multi language)
+    let title = {};
+    let body = {};
+
+    if (status === "accepted") {
+      title = {
+        ar: "تم قبول طلبك",
+        en: "Order Accepted",
+        fr: "Commande acceptée"
+      };
+
+      body = {
+        ar: "تم قبول طلبك من البائع",
+        en: "Your order was accepted by seller",
+        fr: "Votre commande a été acceptée par le vendeur"
+      };
+    }
+
+    if (status === "shipped") {
+      title = {
+        ar: "تم شحن طلبك",
+        en: "Order Shipped",
+        fr: "Commande expédiée"
+      };
+
+      body = {
+        ar: "طلبك في الطريق 🚚",
+        en: "Your order is on the way 🚚",
+        fr: "Votre commande est en route 🚚"
+      };
+    }
+
+    // 4. إنشاء الإشعار (هنا الصحيح)
+    await pool.query(
+      `INSERT INTO notifications(
+        user_id,
+        sender_id,
+        title,
+        body,
+        type,
+        order_id
+      ) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        buyerId,
+        req.user.id,
+        title,
+        body,
+        status,
+        orderId
+      ]
+    );
+
+    return res.json({ success: true });
 
   } catch (e) {
-
-    console.log("UPDATE STATUS ERROR ❌", e);
-
-    res.status(500).json({
-      error: e.message
-    });
+    console.log(e);
+    res.status(500).json({ error: e.message });
   }
 });
-
+//============GET=============
 app.get("/my-orders", auth, async (req, res) => {
   try {
 
