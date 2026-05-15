@@ -715,7 +715,7 @@ app.get("/seller-stats/:sellerId", async (req, res) => {
   }
 });
 // ================= ADD RATING =================
-app.post("/ratings", authMiddleware, async (req, res) => {
+app.post("/ratings", auth, async (req, res) => {
   try {
     const buyerId = req.user.id;
 
