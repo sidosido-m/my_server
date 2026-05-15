@@ -115,19 +115,15 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   console.log("UPLOAD FILE TYPE:", file.mimetype);
 
-  // ✅ قبول كل الملفات
-  const allowed = [
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp"
-];
+  const allowedExt = /jpeg|jpg|png|webp|heic|heif/;
+  const extOk = allowedExt.test(file.originalname.toLowerCase());
+  const mimeOk = file.mimetype.startsWith("image/");
 
-if (allowed.includes(file.mimetype)) {
-  cb(null, true);
-} else {
-  cb(new Error("Only images allowed"));
-}
+  if (extOk || mimeOk) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only images allowed"));
+  }
 };
 // ================= MULTER =================
 const upload = multer({
@@ -581,6 +577,19 @@ app.delete("/products/:id", auth, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
+app.get("/seller/:id/products", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM products WHERE seller_id=$1 ORDER BY id DESC",
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 // ================= SELLER PROFILE =================
 app.get("/seller/:id", async (req, res) => {
   const id = req.params.id;
@@ -617,7 +626,7 @@ app.get("/seller/:id", async (req, res) => {
       products: products.rows,
       followers: followers.rows[0].count,
       following: following.rows[0].count,
-      rating: rating.rows[0].coalesce
+      rating: rating.rows[0].avg
     });
 
   } catch (err) {
@@ -1224,7 +1233,20 @@ app.get("/conversations", auth, async (req, res) => {
   }
 });
 
+app.put("/messages/seen/:userId", auth, async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE messages
+       SET status='seen'
+       WHERE receiver_id=$1 AND sender_id=$2`,
+      [req.user.id, req.params.userId]
+    );
 
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 // ================= MESSAGE =================
 app.get("/messages/:userId", auth, async (req, res) => {
   try {
