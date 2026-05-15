@@ -590,6 +590,7 @@ app.get("/seller/:id/products", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
 // ================= SELLER PROFILE =================
 app.get("/seller/:id", async (req, res) => {
   const id = req.params.id;
@@ -634,62 +635,56 @@ app.get("/seller/:id", async (req, res) => {
   }
 });
 //-----------FOLLOW----------------
-app.post("/follow/:sellerId", auth, async (req, res) => {
-  const sellerId = req.params.sellerId;
+app.post("/follow/:id", auth, async (req, res) => {
+  const followerId = req.user.id;
+  const followingId = req.params.id;
 
-  const exists = await pool.query(
-    "SELECT * FROM followers WHERE user_id=$1 AND seller_id=$2",
-    [req.user.id, sellerId]
+  const exists = await db.query(
+    "SELECT 1 FROM followers WHERE follower_id=$1 AND following_id=$2",
+    [followerId, followingId]
   );
 
   if (exists.rows.length > 0) {
-    await pool.query(
-      "DELETE FROM followers WHERE user_id=$1 AND seller_id=$2",
-      [req.user.id, sellerId]
+    await db.query(
+      "DELETE FROM followers WHERE follower_id=$1 AND following_id=$2",
+      [followerId, followingId]
     );
 
     return res.json({ following: false });
   }
 
-  await pool.query(
-    "INSERT INTO followers(user_id, seller_id) VALUES($1,$2)",
-    [req.user.id, sellerId]
+  await db.query(
+    "INSERT INTO followers (follower_id, following_id) VALUES ($1, $2)",
+    [followerId, followingId]
   );
 
   res.json({ following: true });
 });
-
 //-----------Followers----------------
-app.get("/followers/:sellerId", async (req, res) => {
-  try {
-    const data = await pool.query(
-      `SELECT u.id, u.name, u.image
-       FROM followers f
-       JOIN users u ON u.id = f.user_id
-       WHERE f.seller_id=$1`,
-      [req.params.sellerId]
-    );
+app.get("/followers/:id", async (req, res) => {
+  const result = await db.query(
+    `SELECT users.*
+     FROM followers
+     JOIN users ON users.id = followers.follower_id
+     WHERE followers.following_id = $1`,
+    [req.params.id]
+  );
 
-    res.json(data.rows);
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  res.json(result.rows);
 });
-app.get("/following/:userId", async (req, res) => {
-  try {
-    const data = await pool.query(
-      `SELECT u.id, u.name, u.username, u.image
-       FROM followers f
-       JOIN users u ON u.id = f.seller_id
-       WHERE f.user_id=$1`,
-      [req.params.userId]
-    );
+ 
+app.get("/is-following/:id", auth, async (req, res) => {
+  const followerId = req.user.id;
+  const followingId = req.params.id;
 
-    res.json(data.rows);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  const result = await db.query(
+    "SELECT 1 FROM followers WHERE follower_id=$1 AND following_id=$2",
+    [followerId, followingId]
+  );
+
+  res.json({
+    isFollowing: result.rows.length > 0
+  });
 });
 //-----------/seller-stats/:sellerId----------------
 app.get("/seller-stats/:sellerId", async (req, res) => {
@@ -719,7 +714,100 @@ app.get("/seller-stats/:sellerId", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+// ================= ADD RATING =================
+app.post("/ratings", authMiddleware, async (req, res) => {
+  try {
+    const buyerId = req.user.id;
 
+    const {
+      product_id,
+      seller_id,
+      rating
+    } = req.body;
+
+    // تحقق
+    if (!product_id || !seller_id || !rating) {
+      return res.status(400).json({
+        error: "missing fields"
+      });
+    }
+
+    // منع التقييم مرتين
+    const existing = await pool.query(
+      `
+      SELECT * FROM ratings
+      WHERE buyer_id = $1
+      AND product_id = $2
+      `,
+      [buyerId, product_id]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(400).json({
+        error: "already rated"
+      });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO ratings
+      (
+        product_id,
+        seller_id,
+        buyer_id,
+        rating
+      )
+      VALUES ($1,$2,$3,$4)
+      `,
+      [
+        product_id,
+        seller_id,
+        buyerId,
+        rating
+      ]
+    );
+
+    res.json({
+      success: true
+    });
+
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({
+      error: "server error"
+    });
+  }
+});
+// ================= SELLER RATING =================
+app.get("/seller-rating/:id", async (req, res) => {
+  try {
+
+    const sellerId = req.params.id;
+
+    const result = await pool.query(
+      `
+      SELECT
+      ROUND(AVG(rating)::numeric,1) as rating,
+      COUNT(*) as total
+      FROM ratings
+      WHERE seller_id = $1
+      `,
+      [sellerId]
+    );
+
+    res.json({
+      rating: result.rows[0].rating ?? 0,
+      total: result.rows[0].total ?? 0
+    });
+
+  } catch (e) {
+    console.log(e);
+
+    res.status(500).json({
+      error: "server error"
+    });
+  }
+});
 //-----------REVIEW----------------
 app.post("/review/:sellerId", auth, async (req, res) => {
   const { rating } = req.body;
@@ -1123,6 +1211,19 @@ app.put("/orders/:id/status", auth, async (req, res) => {
         fr: "Votre commande est en route 🚚"
       };
     }
+    if (status === "delivered") {
+  title = {
+    ar: "تم توصيل الطلب",
+    en: "Order Delivered",
+    fr: "Commande livrée"
+  };
+
+  body = {
+    ar: "تم توصيل طلبك بنجاح 📦",
+    en: "Your order has been delivered 📦",
+    fr: "Votre commande a été livrée 📦"
+  };
+}
 console.log("CREATING NOTIFICATION");
 console.log("BUYER:", buyerId);
 console.log("STATUS:", status);
@@ -1392,6 +1493,6 @@ console.log("END FILE REACHED");
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
