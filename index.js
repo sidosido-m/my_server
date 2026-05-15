@@ -21,7 +21,11 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-app.use(cors());
+app.use(cors({
+  origin: "*",
+  methods: ["GET","POST","PUT","DELETE","PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 app.use(express.json());
 
 const baseUrl = process.env.BASE_URL;
@@ -978,7 +982,63 @@ RETURNING *
     });
   }
 });
+//============== NOTIFICATION ==================
+app.post("/notifications", auth, async (req, res) => {
+  try {
+    const { user_id, title, body, type } = req.body;
 
+    const result = await pool.query(
+      `INSERT INTO notifications(user_id, sender_id, title, body, type, is_read)
+       VALUES($1,$2,$3,$4,$5,false)
+       RETURNING *`,
+      [
+        user_id,
+        req.user.id,
+        title,
+        body,
+        type
+      ]
+    );
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+//===========id n=====================
+app.patch("/notifications/:id", auth, async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE notifications
+       SET is_read=true
+       WHERE id=$1 AND user_id=$2`,
+      [req.params.id, req.user.id]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+//============GET NOTIFICATION ===============
+app.get("/notifications", auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, user_id, title, body, type, is_read, created_at
+       FROM notifications
+       WHERE user_id=$1
+       ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 // ================= SELLER ORDERS =================
 app.put("/orders/:id/status", auth, async (req, res) => {
   try {
@@ -1042,7 +1102,7 @@ app.put("/orders/:id/status", auth, async (req, res) => {
       };
     }
 
-    // 4. إنشاء الإشعار (هنا الصحيح)
+    // 4. إنشاء الإشعار (هنا الصحيح) 
     await pool.query(
       `INSERT INTO notifications(
         user_id,
