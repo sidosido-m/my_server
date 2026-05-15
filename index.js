@@ -1034,17 +1034,30 @@ app.patch("/notifications/:id", auth, async (req, res) => {
 //============GET NOTIFICATION ===============
 app.get("/notifications", auth, async (req, res) => {
   try {
+
     const result = await pool.query(
-      `SELECT id, user_id, title, body, type, is_read, created_at
-       FROM notifications
-       WHERE user_id=$1
-       ORDER BY created_at DESC`,
+      `
+      SELECT
+        n.*,
+        u.name as sender_name,
+        u.image as sender_image
+
+      FROM notifications n
+
+      LEFT JOIN users u
+      ON u.id = n.sender_id
+
+      WHERE n.user_id=$1
+
+      ORDER BY n.created_at DESC
+      `,
       [req.user.id]
     );
 
     res.json(result.rows);
 
   } catch (err) {
+    console.log(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1110,7 +1123,9 @@ app.put("/orders/:id/status", auth, async (req, res) => {
         fr: "Votre commande est en route 🚚"
       };
     }
-
+console.log("CREATING NOTIFICATION");
+console.log("BUYER:", buyerId);
+console.log("STATUS:", status);
     // 4. إنشاء الإشعار (هنا الصحيح) 
     await pool.query(
       `INSERT INTO notifications(
@@ -1130,7 +1145,7 @@ app.put("/orders/:id/status", auth, async (req, res) => {
         orderId
       ]
     );
-
+console.log("NOTIFICATION CREATED");
     return res.json({ success: true });
 
   } catch (e) {
