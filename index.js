@@ -907,10 +907,10 @@ app.post("/checkout", auth, async (req, res) => {
   fullName,
   phone,
   country,
-  state,
   city,
   zipCode,
-  note
+  latitude,
+  longitude
 } = req.body;
 
 const orderResult = await pool.query(
@@ -922,10 +922,10 @@ INSERT INTO orders(
   full_name,
   phone,
   country,
-  state,
   city,
   zip_code,
-  note
+  latitude,
+  longitude
 )
 VALUES(
   $1,$2,'pending',
@@ -939,10 +939,10 @@ RETURNING *
   fullName,
   phone,
   country,
-  state,
   city,
   zipCode,
-  note
+  latitude,
+  longitude
 ]
 );
     const order = orderResult.rows[0];
@@ -1136,6 +1136,64 @@ app.put("/orders/:id/status", auth, async (req, res) => {
   } catch (e) {
     console.log(e);
     res.status(500).json({ error: e.message });
+  }
+});
+// ================= SELLER ORDERS =================
+app.get("/seller-orders", auth, async (req, res) => {
+  try {
+
+    const result = await pool.query(
+      `
+      SELECT
+        o.id as order_id,
+        o.status,
+        o.full_name,
+        o.phone,
+        o.country,
+        o.city,
+        o.zip_code,
+        o.latitude,
+        o.longitude,
+        o.created_at,
+
+        oi.quantity,
+        oi.price,
+
+        p.id as product_id,
+        p.name as product_name,
+        p.image as product_image,
+
+        u.id as buyer_id,
+        u.name as buyer_name,
+        u.image as buyer_image
+
+      FROM orders o
+
+      JOIN order_items oi
+      ON oi.order_id = o.id
+
+      JOIN products p
+      ON p.id = oi.product_id
+
+      JOIN users u
+      ON u.id = o.user_id
+
+      WHERE p.seller_id = $1
+
+      ORDER BY o.id DESC
+      `,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+
+  } catch (e) {
+
+    console.log(e);
+
+    res.status(500).json({
+      error: e.message
+    });
   }
 });
 //============GET=============
