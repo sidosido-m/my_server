@@ -51,52 +51,78 @@ pool.query("SELECT NOW()")
   });
 //============== SOCKETS ================
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
 
-  socket.on("online", (userId) => {
+  console.log("USER CONNECTED:", socket.id);
+
+  // 🔥 تسجيل المستخدم أونلاين
+  socket.on("join", (userId) => {
     onlineUsers.set(userId, socket.id);
-    io.emit("user-status", { userId, status: "online" });
+    console.log("JOIN:", userId, socket.id);
   });
 
+  // ================= MESSAGE =================
   socket.on("send-message", async (data) => {
-    console.log("MESSAGE:", data);
+    try {
+      const { senderId, receiverId, message, type } = data;
 
-    const { senderId, receiverId, message, type } = data;
+      const result = await pool.query(
+        `
+        INSERT INTO messages(
+          sender_id,
+          receiver_id,
+          message,
+          type,
+          status
+        )
+        VALUES($1,$2,$3,$4,$5)
+        RETURNING *
+        `,
+        [
+          senderId,
+          receiverId,
+          message,
+          type || "text",
+          "sent"
+        ]
+      );
 
-    const result = await pool.query(
-      `INSERT INTO messages(sender_id, receiver_id, message, type, status)
-       VALUES($1,$2,$3,$4,'sent')
-       RETURNING *`,
-      [senderId, receiverId, message, type || "text"]
-    );
+      const saved = result.rows[0];
 
-    const saved = result.rows[0];
+      const receiverSocket = onlineUsers.get(receiverId);
+      const senderSocket = onlineUsers.get(senderId);
 
-    const receiverSocket = onlineUsers.get(receiverId);
+      // 🔥 إرسال للمرسل (sync)
+      if (senderSocket) {
+        io.to(senderSocket).emit("new-message", saved);
+      }
 
-    if (receiverSocket) {
-      io.to(receiverSocket).emit("new-message", saved);
-    }
+      // 🔥 إرسال للمستقبل فقط إذا أونلاين
+      if (receiverSocket) {
+        io.to(receiverSocket).emit("new-message", saved);
+      }
 
-    const senderSocket = onlineUsers.get(senderId);
-
-    if (senderSocket) {
-      io.to(senderSocket).emit("new-message", saved);
+    } catch (err) {
+      console.log("SEND MESSAGE ERROR:", err);
     }
   });
 
+  // ================= DISCONNECT =================
   socket.on("disconnect", () => {
     for (let [userId, socketId] of onlineUsers.entries()) {
       if (socketId === socket.id) {
         onlineUsers.delete(userId);
-        io.emit("user-status", { userId, status: "offline" });
+
+        io.emit("user-status", {
+          userId,
+          status: "offline"
+        });
+
         break;
       }
     }
   });
+
 });
-
-
 // ================= STORAGE =================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -1035,16 +1061,42 @@ app.post("/like/:productId", auth, async (req, res) => {
 app.post("/checkout", auth, async (req, res) => {
   try {
 
-    const cart = await pool.query(
-      `SELECT 
-        c.*,
-        p.price,
-        p.seller_id
-       FROM cart c
-       JOIN products p ON p.id = c.product_id
-       WHERE c.user_id=$1`,
-      [req.user.id]
-    );
+    const { items } = req.body;
+
+if (!items || items.length === 0) {
+  return res.status(400).json({
+    error: "No items selected"
+  });
+}
+
+let cart = {
+  rows: []
+};
+
+for (const item of items) {
+
+  const product = await pool.query(
+    `
+    SELECT
+      id,
+      price,
+      seller_id
+    FROM products
+    WHERE id=$1
+    `,
+    [item.productId]
+  );
+
+  if (product.rows.length > 0) {
+
+    cart.rows.push({
+      product_id: item.productId,
+      quantity: item.qty,
+      price: product.rows[0].price,
+      seller_id: product.rows[0].seller_id,
+    });
+  }
+}
 
     if (cart.rows.length === 0) {
       return res.status(400).json({
@@ -1496,17 +1548,27 @@ app.get("/messages/:userId", auth, async (req, res) => {
     const limit = 50;
 
     const result = await pool.query(
-  `SELECT 
-    m.*,
-    u.name,
-    u.image as user_image
-   FROM messages m
-   JOIN users u ON u.id = m.sender_id
-   WHERE (m.sender_id=$1 AND m.receiver_id=$2)
-      OR (m.sender_id=$2 AND m.receiver_id=$1)
-   ORDER BY m.created_at ASC
-   LIMIT $3`,
-  [req.user.id, otherUser, limit]
+`
+SELECT 
+  m.*,
+  u.name,
+  u.image as user_image,
+  TO_CHAR(m.created_at, 'YYYY-MM-DD HH24:MI') as formatted_time
+
+FROM messages m
+
+JOIN users u
+ON u.id = m.sender_id
+
+WHERE
+(m.sender_id=$1 AND m.receiver_id=$2)
+OR
+(m.sender_id=$2 AND m.receiver_id=$1)
+
+ORDER BY m.created_at ASC
+LIMIT $3
+`,
+[req.user.id, otherUser, limit]
 );
 
     res.json(result.rows);
