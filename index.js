@@ -117,7 +117,13 @@ const fileFilter = (req, file, cb) => {
 
   const allowedExt = /jpeg|jpg|png|webp|heic|heif/;
   const extOk = allowedExt.test(file.originalname.toLowerCase());
-  const mimeOk = file.mimetype.startsWith("image/");
+  const mimeOk = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+].includes(file.mimetype);
 
   if (extOk || mimeOk) {
     cb(null, true);
@@ -135,7 +141,7 @@ const upload = multer({
 });
 
 // ================= STATIC ACCESS =================
-app.post("/upload", upload.single("image"), async (req, res) => {
+app.post("/upload", auth, upload.single("image"), async (req, res) => {
   try {
 
     console.log("REQ FILE:", req.file);
@@ -639,13 +645,13 @@ app.post("/follow/:id", auth, async (req, res) => {
   const followerId = req.user.id;
   const followingId = req.params.id;
 
-  const exists = await db.query(
+  const exists = await pool.query(
     "SELECT 1 FROM followers WHERE follower_id=$1 AND following_id=$2",
     [followerId, followingId]
   );
 
   if (exists.rows.length > 0) {
-    await db.query(
+    await pool.query(
       "DELETE FROM followers WHERE follower_id=$1 AND following_id=$2",
       [followerId, followingId]
     );
@@ -653,16 +659,77 @@ app.post("/follow/:id", auth, async (req, res) => {
     return res.json({ following: false });
   }
 
-  await db.query(
+  await pool.query(
     "INSERT INTO followers (follower_id, following_id) VALUES ($1, $2)",
     [followerId, followingId]
   );
 
   res.json({ following: true });
 });
+
+app.get("/follow/check/:id", auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM followers
+       WHERE follower_id=$1 AND following_id=$2`,
+      [req.user.id, req.params.id]
+    );
+
+    res.json({
+      following: result.rows.length > 0
+    });
+
+  } catch (e) {
+    res.status(500).json({
+      error: e.message
+    });
+  }
+});
 //-----------Followers----------------
+app.get("/following/:id", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT users.*
+      FROM followers
+      JOIN users
+      ON users.id = followers.following_id
+      WHERE followers.follower_id = $1
+      `,
+      [req.params.id]
+    );
+
+    res.json(result.rows);
+
+  } catch (e) {
+    res.status(500).json({
+      error: e.message
+    });
+  }
+});
+app.delete("/follow/:id", auth, async (req, res) => {
+  try {
+
+    await pool.query(
+      `DELETE FROM followers
+       WHERE follower_id=$1
+       AND following_id=$2`,
+      [req.user.id, req.params.id]
+    );
+
+    res.json({
+      following: false
+    });
+
+  } catch (e) {
+    res.status(500).json({
+      error: e.message
+    });
+  }
+});
+
 app.get("/followers/:id", async (req, res) => {
-  const result = await db.query(
+  const result = await pool.query(
     `SELECT users.*
      FROM followers
      JOIN users ON users.id = followers.follower_id
@@ -677,7 +744,7 @@ app.get("/is-following/:id", auth, async (req, res) => {
   const followerId = req.user.id;
   const followingId = req.params.id;
 
-  const result = await db.query(
+  const result = await pool.query(
     "SELECT 1 FROM followers WHERE follower_id=$1 AND following_id=$2",
     [followerId, followingId]
   );
