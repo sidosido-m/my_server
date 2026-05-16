@@ -426,6 +426,7 @@ console.log("BG:", background_image);
 //==============GET PTOFILE ============
 app.get("/profile", auth, async (req, res) => {
   try {
+    console.log("PROFILE USER:", req.user);
     const result = await pool.query(
       `SELECT id, name, username, email, image,phone, background_image, role
        FROM users WHERE id=$1`,
