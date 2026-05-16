@@ -436,12 +436,12 @@ app.get("/profile", auth, async (req, res) => {
     const user = result.rows[0];
 
     const followers = await pool.query(
-      "SELECT COUNT(*) FROM followers WHERE seller_id=$1",
+     "SELECT COUNT(*) FROM followers WHERE following_id=$1",
       [req.user.id]
     );
 
     const following = await pool.query(
-      "SELECT COUNT(*) FROM followers WHERE user_id=$1",
+       "SELECT COUNT(*) FROM followers WHERE follower_id=$1",
       [req.user.id]
     );
 
@@ -615,17 +615,17 @@ app.get("/seller/:id", async (req, res) => {
     );
 
     const followers = await pool.query(
-      "SELECT COUNT(*) FROM followers WHERE seller_id=$1",
+       "SELECT COUNT(*) FROM followers WHERE following_id=$1",
       [id]
     );
 
     const following = await pool.query(
-      "SELECT COUNT(*) FROM followers WHERE user_id=$1",
+      "SELECT COUNT(*) FROM followers WHERE follower_id=$1",
       [id]
     );
 
     const rating = await pool.query(
-      "SELECT COALESCE(AVG(rating),0) FROM reviews WHERE seller_id=$1",
+        "SELECT COALESCE(AVG(rating),0) as avg FROM reviews WHERE seller_id=$1",
       [id]
     );
 
@@ -758,12 +758,12 @@ app.get("/is-following/:id", auth, async (req, res) => {
 app.get("/seller-stats/:sellerId", async (req, res) => {
   try {
     const followers = await pool.query(
-      "SELECT COUNT(*) FROM followers WHERE seller_id=$1",
+        "SELECT COUNT(*) FROM followers WHERE following_id=$1",
       [req.params.sellerId]
     );
 
     const following = await pool.query(
-      "SELECT COUNT(*) FROM followers WHERE user_id=$1",
+"SELECT COUNT(*) FROM followers WHERE follower_id=$1",
       [req.params.sellerId]
     );
 
