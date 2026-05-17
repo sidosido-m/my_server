@@ -1087,6 +1087,7 @@ let cart = {
 
 for (const item of items) {
 
+          if (!item.productId) continue;
   const product = await pool.query(
     `
     SELECT
