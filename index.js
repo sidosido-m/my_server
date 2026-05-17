@@ -932,9 +932,9 @@ app.get("/seller-dashboard", auth, async (req, res) => {
 
   try {
     const user = await pool.query(
-      "SELECT id, name, role FROM users WHERE id=$1",
-      [id]
-    );
+  "SELECT id, name, role, image FROM users WHERE id=$1",
+  [id]
+);
 
     const products = await pool.query(
       "SELECT * FROM products WHERE seller_id=$1 ORDER BY id DESC LIMIT 5",
