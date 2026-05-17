@@ -995,10 +995,22 @@ app.post("/cart", auth, async (req, res) => {
 
 app.get("/cart", auth, async (req, res) => {
   const data = await pool.query(
-    `SELECT c.id, c.quantity as qty, p.name, p.price, p.image
-     FROM cart c
-     JOIN products p ON p.id = c.product_id
-     WHERE c.user_id=$1`,
+    `
+    SELECT 
+      c.id,
+      c.product_id,
+      c.quantity as qty,
+      p.name,
+      p.price,
+      p.image
+
+    FROM cart c
+
+    JOIN products p
+    ON p.id = c.product_id
+
+    WHERE c.user_id=$1
+    `,
     [req.user.id]
   );
 
