@@ -495,9 +495,16 @@ app.get("/products", async (req, res) => {
       SELECT 
         p.*,
         u.name AS seller_name,
-        u.image AS seller_image
+        u.image AS seller_image,
+
+        (
+          SELECT COUNT(*)
+          FROM likes l
+          WHERE l.product_id = p.id
+        ) AS likes_count
 
       FROM products p
+
       JOIN users u
       ON u.id = p.seller_id
 
@@ -971,7 +978,7 @@ app.put("/become-seller", auth, async (req, res) => {
 });
 // ================= CART =================
 app.post("/cart", auth, async (req, res) => {
-  const { productId, qty } = req.body;
+  const { productId, quantity } = req.body;
 
   const exists = await pool.query(
     "SELECT * FROM cart WHERE user_id=$1 AND product_id=$2",
@@ -980,13 +987,13 @@ app.post("/cart", auth, async (req, res) => {
 
   if (exists.rows.length > 0) {
     await pool.query(
-      "UPDATE cart SET quantity = quantity + 1 WHERE user_id=$1 AND product_id=$2",
+      "UPDATE cart SET quantity = quantity + $1 WHERE user_id=$1 AND product_id=$2",
       [req.user.id, productId]
     );
   } else {
     await pool.query(
       "INSERT INTO cart(user_id,product_id,quantity) VALUES($1,$2,$3)",
-      [req.user.id, productId, qty || 1]
+      [req.user.id, productId, quantity || 1]
     );
   }
 
@@ -999,7 +1006,7 @@ app.get("/cart", auth, async (req, res) => {
     SELECT 
       c.id,
       c.product_id,
-      c.quantity as qty,
+      c.quantity as quantity,
       p.name,
       p.price,
       p.image
@@ -1027,11 +1034,11 @@ app.delete("/cart/:id", auth, async (req, res) => {
 });
 
 app.put("/cart/:id", auth, async (req, res) => {
-  const { qty } = req.body;
+  const { quantity } = req.body;
 
   await pool.query(
     "UPDATE cart SET quantity=$1 WHERE id=$2 AND user_id=$3",
-    [qty, req.params.id, req.user.id]
+    [quantity, req.params.id, req.user.id]
   );
 
   res.json({ success: true });
@@ -1087,7 +1094,10 @@ let cart = {
 
 for (const item of items) {
 
-          if (!item.productId) continue;
+         const productId = item.productId || item.product_id || item.id;
+const quantity = item.quantity || 1;
+
+if (!productId) continue;
   const product = await pool.query(
     `
     SELECT
@@ -1097,17 +1107,18 @@ for (const item of items) {
     FROM products
     WHERE id=$1
     `,
-    [item.productId]
+    [productId]
+
   );
 
   if (product.rows.length > 0) {
 
     cart.rows.push({
-      product_id: item.productId,
-      quantity: item.qty,
-      price: product.rows[0].price,
-      seller_id: product.rows[0].seller_id,
-    });
+  product_id: productId,
+  quantity: quantity,
+  price: product.rows[0].price,
+  seller_id: product.rows[0].seller_id,
+});
   }
 }
 
@@ -1120,7 +1131,7 @@ for (const item of items) {
     let total = 0;
 
     cart.rows.forEach(item => {
-      total += item.price * item.quantity;
+     total += item.price * (item.quantity || 1);
     });
 
     // CREATE ORDER
@@ -1172,7 +1183,7 @@ RETURNING *
   for (const item of cart.rows) {
 
   const productId = item.product_id || item.productId;
-  const qty = item.quantity || item.qty || 1;
+  const quantity = item.quantity || item.quantity || 1;
   const price = item.price || 0;
 
   if (!productId) continue;
@@ -1188,7 +1199,7 @@ RETURNING *
     [
       order.id,
       productId,
-      qty,
+      quantity,
       price
     ]
   );
