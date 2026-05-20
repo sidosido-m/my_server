@@ -549,7 +549,35 @@ app.use(
   "/uploads/videos",
   express.static("uploads/videos")
 );
+// ================= GET VIDEOS =================
+app.get("/videos", async (req, res) => {
+  try {
 
+    const result = await pool.query(`
+      SELECT
+        v.*,
+        u.name,
+        u.image
+
+      FROM videos v
+
+      JOIN users u
+      ON u.id = v.user_id
+
+      ORDER BY v.id DESC
+    `);
+
+    res.json(result.rows);
+
+  } catch (e) {
+
+    console.log(e);
+
+    res.status(500).json({
+      error: e.message
+    });
+  }
+});
 
 // ================= PRODUCTS =================
 
