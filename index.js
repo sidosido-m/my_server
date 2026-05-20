@@ -30,20 +30,13 @@ app.use(express.json());
 
 const baseUrl = process.env.BASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
+const videoDir = path.join(__dirname, "uploads/videos");
+
+if (!fs.existsSync(videoDir)) {
+  fs.mkdirSync(videoDir, { recursive: true });
+}
 
 const uploadDir = path.join(__dirname, "uploads");
-const videoStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/videos");
-  },
-
-  filename: (req, file, cb) => {
-    cb(
-      null,
-      Date.now() + path.extname(file.originalname)
-    );
-  },
-});
 
 const uploadVideo = multer({
   storage: videoStorage,
@@ -140,9 +133,9 @@ io.on("connection", (socket) => {
 
 });
 // ================= STORAGE =================
-const storage = multer.diskStorage({
+const videoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDir);
+    cb(null, videoDir);
   },
 
   filename: (req, file, cb) => {
@@ -547,7 +540,7 @@ app.post(
 
 app.use(
   "/uploads/videos",
-  express.static("uploads/videos")
+  express.static(videoDir)
 );
 // ================= GET VIDEOS =================
 app.get("/videos", async (req, res) => {
