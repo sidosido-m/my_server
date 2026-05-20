@@ -30,31 +30,11 @@ app.use(express.json());
 
 const baseUrl = process.env.BASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
-const videoDir = path.join(__dirname, "uploads/videos");
+
 // ================= STORAGE =================
-const videoStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, videoDir);
-  },
-
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const safeName = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, safeName + ext);
-  },
-});
-
-if (!fs.existsSync(videoDir)) {
-  fs.mkdirSync(videoDir, { recursive: true });
-}
-
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const uploadVideo = multer({
-  storage: videoStorage,
-});
 
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
@@ -507,55 +487,35 @@ app.get("/profile", auth, async (req, res) => {
   }
 });
 //=====================vedeo===================
-app.post(
-  "/upload-video",
-  auth,
-  uploadVideo.single("video"),
-
-  async (req, res) => {
-
-    try {
-
-      const caption = req.body.caption;
-
-      const videoUrl =
-        `${req.protocol}://${req.get("host")}/uploads/videos/`
-        + req.file.filename;
-
-      await pool.query(
-        `
-        INSERT INTO videos
-        (user_id, video, caption)
-
-        VALUES ($1,$2,$3)
-        `,
-        [
-          req.user.id,
-          videoUrl,
-          caption,
-        ]
-      );
-
-      res.json({
-        success: true,
-        video: videoUrl,
-      });
-
-    } catch (err) {
-
-      console.log(err);
-
-      res.status(500).json({
-        error: "Upload failed",
-      });
+app.post("/upload-video", auth, upload.single("video"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No video" });
     }
-  }
-);
 
-app.use(
-  "/uploads/videos",
-  express.static(videoDir)
-);
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: "video",
+      folder: "videos",
+    });
+
+    fs.unlinkSync(req.file.path);
+
+    await pool.query(
+      `INSERT INTO videos(user_id, video, caption)
+       VALUES ($1,$2,$3)`,
+      [req.user.id, result.secure_url, req.body.caption]
+    );
+
+    res.json({
+      success: true,
+      video: result.secure_url,
+    });
+
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
 // ================= GET VIDEOS =================
 app.get("/videos", async (req, res) => {
   try {
