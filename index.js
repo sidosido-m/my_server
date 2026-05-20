@@ -16,6 +16,8 @@ const http = require("http");
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const onlineUsers = new Map();
+const multer = require("multer");
+const path = require("path");
 
 const io = new Server(server, {
   cors: { origin: "*" },
@@ -32,6 +34,22 @@ const baseUrl = process.env.BASE_URL;
 const JWT_SECRET = process.env.JWT_SECRET;
 
 const uploadDir = path.join(__dirname, "uploads");
+const videoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/videos");
+  },
+
+  filename: (req, file, cb) => {
+    cb(
+      null,
+      Date.now() + path.extname(file.originalname)
+    );
+  },
+});
+
+const uploadVideo = multer({
+  storage: videoStorage,
+});
 
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
@@ -483,6 +501,56 @@ app.get("/profile", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+//=====================vedeo===================
+app.post(
+  "/upload-video",
+  auth,
+  uploadVideo.single("video"),
+
+  async (req, res) => {
+
+    try {
+
+      const caption = req.body.caption;
+
+      const videoUrl =
+        `${req.protocol}://${req.get("host")}/uploads/videos/`
+        + req.file.filename;
+
+      await pool.query(
+        `
+        INSERT INTO videos
+        (user_id, video, caption)
+
+        VALUES ($1,$2,$3)
+        `,
+        [
+          req.user.id,
+          videoUrl,
+          caption,
+        ]
+      );
+
+      res.json({
+        success: true,
+        video: videoUrl,
+      });
+
+    } catch (err) {
+
+      console.log(err);
+
+      res.status(500).json({
+        error: "Upload failed",
+      });
+    }
+  }
+);
+
+app.use(
+  "/uploads/videos",
+  express.static("uploads/videos")
+);
 
 
 // ================= PRODUCTS =================
