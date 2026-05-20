@@ -14,8 +14,9 @@ const http = require("http");
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const onlineUsers = new Map();
-const multer = require("multer");
 const path = require("path");
+const multer = require("multer");
+const uploadVideo = multer({ dest: "uploads/" });
 
 const io = new Server(server, {
   cors: { origin: "*" },
@@ -33,7 +34,11 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // ================= STORAGE =================
 const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(videoDir)) fs.mkdirSync(videoDir, { recursive: true });
+const videoDir = path.join(__dirname, "videos");
+
+if (!fs.existsSync(videoDir)) {
+  fs.mkdirSync(videoDir, { recursive: true });
+}
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 cloudinary.config({
@@ -45,6 +50,16 @@ cloudinary.config({
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+
+const videoUpload = multer({ storage });
 
 // ================= DB TEST =================
 pool.query("SELECT NOW()")
@@ -487,7 +502,7 @@ app.get("/profile", auth, async (req, res) => {
   }
 });
 //=====================vedeo===================
-app.post("/upload-video", auth, upload.single("video"), async (req, res) => {
+app.post("/upload-video", auth, videoUpload.single("video"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No video" });
@@ -519,30 +534,111 @@ app.post("/upload-video", auth, upload.single("video"), async (req, res) => {
 // ================= GET VIDEOS =================
 app.get("/videos", async (req, res) => {
   try {
-
     const result = await pool.query(`
-      SELECT
-        v.*,
-        u.name,
-        u.image
+      SELECT 
+        v.id,
+        v.video AS "videoUrl",
+        v.caption,
+        v.created_at,
+
+        u.id AS "userId",
+        u.name AS "username",
+        u.image AS "userImage"
 
       FROM videos v
-
-      JOIN users u
-      ON u.id = v.user_id
-
+      JOIN users u ON u.id = v.user_id
       ORDER BY v.id DESC
     `);
 
     res.json(result.rows);
 
   } catch (e) {
-
     console.log(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+//================ VIDEOS VIEW ====================
+app.post("/videos/view", async (req, res) => {
+  try {
+    const { video_url } = req.body;
 
-    res.status(500).json({
-      error: e.message
-    });
+    await pool.query(
+      `UPDATE videos
+       SET views = COALESCE(views,0) + 1
+       WHERE video = $1`,
+      [video_url]
+    );
+
+    res.json({ success: true });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+//===================== videos like==================
+app.post("/videos/:id/like", auth, async (req, res) => {
+  try {
+    const videoId = req.params.id;
+
+    const exists = await pool.query(
+      `SELECT * FROM video_likes
+       WHERE user_id=$1 AND video_id=$2`,
+      [req.user.id, videoId]
+    );
+
+    if (exists.rows.length > 0) {
+      await pool.query(
+        `DELETE FROM video_likes
+         WHERE user_id=$1 AND video_id=$2`,
+        [req.user.id, videoId]
+      );
+
+      return res.json({ liked: false });
+    }
+
+    await pool.query(
+      `INSERT INTO video_likes(user_id, video_id)
+       VALUES($1,$2)`,
+      [req.user.id, videoId]
+    );
+
+    res.json({ liked: true });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+//======================
+app.post("/videos/:id/save", auth, async (req, res) => {
+  try {
+    const videoId = req.params.id;
+
+    const exists = await pool.query(
+      `SELECT * FROM saved_videos
+       WHERE user_id=$1 AND video_id=$2`,
+      [req.user.id, videoId]
+    );
+
+    if (exists.rows.length > 0) {
+      await pool.query(
+        `DELETE FROM saved_videos
+         WHERE user_id=$1 AND video_id=$2`,
+        [req.user.id, videoId]
+      );
+
+      return res.json({ saved: false });
+    }
+
+    await pool.query(
+      `INSERT INTO saved_videos(user_id, video_id)
+       VALUES($1,$2)`,
+      [req.user.id, videoId]
+    );
+
+    res.json({ saved: true });
+
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
