@@ -61,6 +61,10 @@ const storage = multer.diskStorage({
 
 const videoUpload = multer({ storage });
 
+app.get("/ping", (req,res)=>{
+  res.send("pong");
+});
+
 // ================= DB TEST =================
 pool.query("SELECT NOW()")
   .then(() => console.log("DB Connected ✅"))
@@ -74,9 +78,18 @@ io.on("connection", (socket) => {
 
   // 🔥 تسجيل المستخدم أونلاين
   socket.on("join", (userId) => {
-    onlineUsers.set(userId, socket.id);
-    console.log("JOIN:", userId, socket.id);
+
+  onlineUsers.set(
+    userId,
+    socket.id,
+  );
+
+  io.emit("user-status", {
+    userId,
+    status: "online"
   });
+
+});
 
   // ================= MESSAGE =================
   socket.on("send-message", async (data) => {
@@ -196,12 +209,14 @@ app.post("/upload", auth, upload.single("image"), async (req, res) => {
       });
     }
 
-    const result = await cloudinary.uploader.upload(
-      req.file.path,
-      {
-        folder: "my_app",
-      }
-    );
+   const result = await cloudinary.uploader.upload(
+  req.file.path,
+  {
+    resource_type: "video",
+    folder: "videos",
+    secure: true,
+  }
+);
 
     console.log("CLOUDINARY RESULT:", result);
 
@@ -264,7 +279,7 @@ if (userExists.rows.length > 0) {
     return res.json({
       success: true,
       email,
-      otp, // 👈 مهم جدا
+      otp,
     });
 
   } catch (err) {
@@ -533,46 +548,74 @@ app.post("/upload-video", auth, videoUpload.single("video"), async (req, res) =>
 });
 // ================= GET VIDEOS =================
 app.get("/videos", async (req, res) => {
+
   try {
+
     const result = await pool.query(`
-      SELECT 
-        v.id,
-        v.video AS "videoUrl",
-        v.caption,
-        v.created_at,
+      SELECT
+  v.id,
+  v.video AS "videoUrl",
+  v.caption,
+  v.created_at,
 
-        u.id AS "userId",
-        u.name AS "username",
-        u.image AS "userImage"
+  v.views_count,
 
-      FROM videos v
-      JOIN users u ON u.id = v.user_id
-      ORDER BY v.id DESC
+  (
+    SELECT COUNT(*)
+    FROM video_likes vl
+    WHERE vl.video_id = v.id
+  ) AS likes_count,
+
+  u.id AS "userId",
+  u.name AS "username",
+  u.image AS "userImage"
+
+FROM videos v
+
+JOIN users u
+ON u.id = v.user_id
+
+ORDER BY v.id DESC
     `);
 
     res.json(result.rows);
 
   } catch (e) {
+
     console.log(e);
-    res.status(500).json({ error: e.message });
+
+    res.status(500).json({
+      error: e.message
+    });
   }
 });
 //================ VIDEOS VIEW ====================
 app.post("/videos/view", async (req, res) => {
+
   try {
-    const { video_url } = req.body;
+
+    const { video_id } = req.body;
 
     await pool.query(
-      `UPDATE videos
-       SET views = COALESCE(views,0) + 1
-       WHERE video = $1`,
-      [video_url]
+      `
+      UPDATE videos
+      SET views_count = views_count + 1
+      WHERE id = $1
+      `,
+      [video_id]
     );
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+    });
 
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (e) {
+
+    console.log(e);
+
+    res.status(500).json({
+      error: "server error",
+    });
   }
 });
 //===================== videos like==================
@@ -1144,7 +1187,7 @@ app.post("/cart", auth, async (req, res) => {
 
   if (exists.rows.length > 0) {
     await pool.query(
-      "UPDATE cart SET quantity = quantity + $1 WHERE user_id=$1 AND product_id=$2",
+      "UPDATE cart SET quantity = quantity + 1 WHERE user_id=$1 AND product_id=$2",
       [req.user.id, productId]
     );
   } else {
