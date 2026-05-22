@@ -532,10 +532,21 @@ app.post("/upload-video", auth, videoUpload.single("video"), async (req, res) =>
     fs.unlinkSync(req.file.path);
 
     await pool.query(
-      `INSERT INTO videos(user_id, video, caption)
-       VALUES ($1,$2,$3)`,
-      [req.user.id, result.secure_url, req.body.caption]
-    );
+  `INSERT INTO videos(
+    user_id,
+    video,
+    caption,
+    product_id
+  )
+   VALUES ($1,$2,$3,$4)`,
+
+  [
+    req.user.id,
+    result.secure_url,
+    req.body.caption,
+    req.body.product_id || null,
+  ]
+);
 
     res.json({
       success: true,
@@ -559,6 +570,7 @@ app.get("/videos", async (req, res) => {
   v.caption,
   v.created_at,
 
+  v.product_id AS "productId",
   v.views_count,
 
   (
@@ -1105,6 +1117,40 @@ app.get("/seller-rating/:id", async (req, res) => {
   } catch (e) {
     console.log(e);
 
+    res.status(500).json({
+      error: "server error"
+    });
+  }
+});
+
+// ================= CHECK IF USER RATED PRODUCT =================
+app.get("/ratings/check/:productId", auth, async (req, res) => {
+  try {
+    const productId = req.params.productId;
+
+    const result = await pool.query(
+      `
+      SELECT rating
+      FROM ratings
+      WHERE buyer_id=$1 AND product_id=$2
+      `,
+      [req.user.id, productId]
+    );
+
+    if (result.rows.length > 0) {
+      return res.json({
+        has_rated: true,
+        stars: result.rows[0].rating
+      });
+    }
+
+    return res.json({
+      has_rated: false,
+      stars: 0
+    });
+
+  } catch (e) {
+    console.log(e);
     res.status(500).json({
       error: "server error"
     });
