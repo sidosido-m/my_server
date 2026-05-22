@@ -17,6 +17,7 @@ const onlineUsers = new Map();
 const path = require("path");
 const multer = require("multer");
 const uploadVideo = multer({ dest: "uploads/" });
+app.use(express.json());
 
 const io = new Server(server, {
   cors: { origin: "*" },
