@@ -216,8 +216,8 @@ app.post("/upload", auth, upload.single("image"), async (req, res) => {
    const result = await cloudinary.uploader.upload(
   req.file.path,
   {
-    resource_type: "video",
-    folder: "videos",
+    resource_type: "image",
+    folder: "images",
     secure: true,
   }
 );
