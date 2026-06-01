@@ -172,6 +172,9 @@ const fileFilter = (req, file, cb) => {
   "image/heif",
 ].includes(file.mimetype);
 
+ console.log("extOk =", extOk);
+  console.log("mimeOk =", mimeOk);
+
   if (extOk || mimeOk) {
     cb(null, true);
   } else {
@@ -209,7 +212,7 @@ app.post("/upload", auth, upload.single("image"), async (req, res) => {
         error: "NO FILE RECEIVED"
       });
     }
-
+    console.log(req.file);
    const result = await cloudinary.uploader.upload(
   req.file.path,
   {
